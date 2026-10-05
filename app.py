@@ -34,8 +34,8 @@ def scan_stock(symbol):
         threads=False
     )
 
-    if data.empty:
-        return None
+        if data.empty:
+            return None
 
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
