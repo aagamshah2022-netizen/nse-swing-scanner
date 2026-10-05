@@ -2,12 +2,9 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(
-page_title="NSE Swing Scanner Debug",
-page_icon="🔍"
-)
+st.set_page_config(page_title="NSE Swing Scanner Debug", page_icon="🔍")
 
-st.title("🔍 NSE Swing Scanner - DEBUG")
+st.title("NSE Swing Scanner - DEBUG")
 
 symbols = [
 "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN",
@@ -41,29 +38,19 @@ two_red_found = 0
 errors = 0
 
 for symbol in symbols:
+try:
+d = yf.download(
+symbol + ".NS",
+period="400d",
+interval="1d",
+auto_adjust=False,
+progress=False,
+threads=False
+)
 
 ```
-try:
-
-    d = yf.download(
-        symbol + ".NS",
-        period="400d",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        threads=False
-    )
-
     if d.empty:
-        debug_rows.append([
-            symbol,
-            "NO DATA",
-            "",
-            "",
-            "",
-            "",
-            ""
-        ])
+        debug_rows.append([symbol, "NO DATA", "", "", "", "", ""])
         continue
 
     if isinstance(d.columns, pd.MultiIndex):
@@ -72,28 +59,14 @@ try:
     required = ["Open", "High", "Low", "Close"]
 
     if not all(col in d.columns for col in required):
-        debug_rows.append([
-            symbol,
-            "MISSING COLUMNS",
-            "",
-            "",
-            "",
-            "",
-            ""
-        ])
+        debug_rows.append([symbol, "MISSING COLUMNS", "", "", "", "", ""])
         continue
 
     d = d.dropna(subset=required)
 
     if len(d) < 10:
         debug_rows.append([
-            symbol,
-            "NOT ENOUGH DATA",
-            len(d),
-            "",
-            "",
-            "",
-            ""
+            symbol, "NOT ENOUGH DATA", len(d), "", "", "", ""
         ])
         continue
 
@@ -102,7 +75,6 @@ try:
     swing = None
 
     for i in range(len(d) - 2, 0, -1):
-
         current_low = float(d.iloc[i]["Low"])
         previous_low = float(d.iloc[i - 1]["Low"])
         next_low = float(d.iloc[i + 1]["Low"])
@@ -112,17 +84,9 @@ try:
             break
 
     if swing is None:
-
         debug_rows.append([
-            symbol,
-            "NO SWING LOW",
-            len(d),
-            "",
-            "",
-            "",
-            ""
+            symbol, "NO SWING LOW", len(d), "", "", "", ""
         ])
-
         continue
 
     swing_found += 1
@@ -137,24 +101,19 @@ try:
     target_date = None
 
     for i in range(swing + 1, len(d)):
-
         o = float(d.iloc[i]["Open"])
         h = float(d.iloc[i]["High"])
         c = float(d.iloc[i]["Close"])
         dt = d.index[i]
 
         if not reached:
-
             if h >= target:
-
                 reached = True
                 target_date = dt
                 plus20_reached += 1
-
             continue
 
         if c < o:
-
             if reds == 0:
                 first_red_date = dt
 
@@ -164,7 +123,6 @@ try:
                 one_red_found += 1
 
             if reds >= 2:
-
                 two_red_found += 1
 
                 results.append([
@@ -189,16 +147,12 @@ try:
                 ])
 
                 break
-
         else:
-
             reds = 0
             first_red_date = None
 
     else:
-
         if not reached:
-
             debug_rows.append([
                 symbol,
                 "NO +20% MOVE",
@@ -210,7 +164,6 @@ try:
             ])
 
         elif reds == 1:
-
             debug_rows.append([
                 symbol,
                 "ONLY 1 RED",
@@ -222,7 +175,6 @@ try:
             ])
 
         else:
-
             debug_rows.append([
                 symbol,
                 "NO 2 CONSECUTIVE RED",
@@ -234,7 +186,6 @@ try:
             ])
 
 except Exception as e:
-
     errors += 1
 
     debug_rows.append([
@@ -269,33 +220,26 @@ st.metric("FINAL MATCHES", len(results))
 st.subheader("CURRENT MATCHES")
 
 if results:
+result_df = pd.DataFrame(
+results,
+columns=[
+"Symbol",
+"Swing Low",
+"+20% Level",
+"Swing Low Date",
+"+20% Date",
+"1st Red Date",
+"2nd Red Date",
+"Current Close"
+]
+)
 
 ```
-result_df = pd.DataFrame(
-    results,
-    columns=[
-        "Symbol",
-        "Swing Low",
-        "+20% Level",
-        "Swing Low Date",
-        "+20% Date",
-        "1st Red Date",
-        "2nd Red Date",
-        "Current Close"
-    ]
-)
-
-st.dataframe(
-    result_df,
-    use_container_width=True
-)
+st.dataframe(result_df, use_container_width=True)
 ```
 
 else:
-
-```
 st.warning("0 CURRENT MATCHES")
-```
 
 st.subheader("DETAILED DEBUG")
 
@@ -312,26 +256,19 @@ columns=[
 ]
 )
 
-st.dataframe(
-debug_df,
-use_container_width=True
-)
+st.dataframe(debug_df, use_container_width=True)
 
 st.subheader("STATUS BREAKDOWN")
 
 if not debug_df.empty:
+status_counts = (
+debug_df["Status"]
+.value_counts()
+.reset_index()
+)
 
 ```
-status_counts = (
-    debug_df["Status"]
-    .value_counts()
-    .reset_index()
-)
-
 status_counts.columns = ["Status", "Count"]
 
-st.dataframe(
-    status_counts,
-    use_container_width=True
-)
+st.dataframe(status_counts, use_container_width=True)
 ```
