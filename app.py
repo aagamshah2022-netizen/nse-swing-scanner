@@ -38,7 +38,7 @@ def scan_stock(symbol):
             return None
 
         if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
+            data.columns = data.columns.get_level_values(0)
 
         data = data.dropna(subset=["Open","High","Low","Close"])
 
