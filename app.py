@@ -24,8 +24,7 @@ symbols = [
 ]
 
 def scan_stock(symbol):
-
-try:
+    try:
 
     data = yf.download(
         symbol + ".NS",
