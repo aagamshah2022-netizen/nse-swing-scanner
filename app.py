@@ -38,7 +38,7 @@ two_red_found = 0
 errors = 0
 
 for symbol in symbols:
-try:
+    try:
 d = yf.download(
 symbol + ".NS",
 period="400d",
