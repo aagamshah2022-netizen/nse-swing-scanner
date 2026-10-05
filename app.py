@@ -25,7 +25,9 @@ symbols = [
 
 
 def scan_stock(symbol):
+
     try:
+
         data = yf.download(
             symbol + ".NS",
             period="400d",
@@ -36,7 +38,7 @@ def scan_stock(symbol):
         )
 
         if data.empty:
-            return None
+            return []
 
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
@@ -44,89 +46,120 @@ def scan_stock(symbol):
         required = ["Open", "High", "Low", "Close"]
 
         if not all(col in data.columns for col in required):
-            return None
+            return []
 
         data = data.dropna(subset=required)
 
         if len(data) < 10:
-            return None
+            return []
 
-        swing_index = None
+        matches = []
 
-        for i in range(len(data) - 2, 0, -1):
-            current_low = float(data.iloc[i]["Low"])
-            previous_low = float(data.iloc[i - 1]["Low"])
-            next_low = float(data.iloc[i + 1]["Low"])
+        for swing_index in range(1, len(data) - 2):
 
-            if current_low < previous_low and current_low < next_low:
-                swing_index = i
-                break
+            current_low = float(data.iloc[swing_index]["Low"])
+            previous_low = float(data.iloc[swing_index - 1]["Low"])
+            next_low = float(data.iloc[swing_index + 1]["Low"])
 
-        if swing_index is None:
-            return None
-
-        swing_low = float(data.iloc[swing_index]["Low"])
-        swing_date = data.index[swing_index]
-
-        target = swing_low * 1.20
-
-        reached = False
-        first_red_date = None
-
-        for i in range(swing_index + 1, len(data)):
-            candle_open = float(data.iloc[i]["Open"])
-            candle_high = float(data.iloc[i]["High"])
-            candle_close = float(data.iloc[i]["Close"])
-            candle_date = data.index[i]
-
-            if not reached:
-                if candle_high >= target:
-                    reached = True
+            if not (
+                current_low < previous_low
+                and current_low < next_low
+            ):
                 continue
 
-            if candle_close < candle_open:
-                if first_red_date is None:
-                    first_red_date = candle_date
-                else:
-                    return {
-                        "Symbol": symbol,
-                        "Swing Low": round(swing_low, 2),
-                        "+20% Level": round(target, 2),
-                        "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
-                        "+20% Date": data.index[i - 1].strftime("%Y-%m-%d"),
-                        "1st Red Date": first_red_date.strftime("%Y-%m-%d"),
-                        "2nd Red Date": candle_date.strftime("%Y-%m-%d"),
-                        "Current Close": round(candle_close, 2)
-                    }
-            else:
-                first_red_date = None
+            swing_low = current_low
+            swing_date = data.index[swing_index]
 
-        return None
+            target = swing_low * 1.20
+
+            reached = False
+            first_red_date = None
+            target_date = None
+
+            for i in range(swing_index + 1, len(data)):
+
+                candle_open = float(data.iloc[i]["Open"])
+                candle_high = float(data.iloc[i]["High"])
+                candle_close = float(data.iloc[i]["Close"])
+                candle_date = data.index[i]
+
+                if not reached:
+
+                    if candle_high >= target:
+                        reached = True
+                        target_date = candle_date
+
+                    continue
+
+                if candle_close < candle_open:
+
+                    if first_red_date is None:
+
+                        first_red_date = candle_date
+
+                    else:
+
+                        matches.append({
+                            "Symbol": symbol,
+                            "Swing Low": round(swing_low, 2),
+                            "+20% Level": round(target, 2),
+                            "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
+                            "+20% Date": target_date.strftime("%Y-%m-%d"),
+                            "1st Red Date": first_red_date.strftime("%Y-%m-%d"),
+                            "2nd Red Date": candle_date.strftime("%Y-%m-%d"),
+                            "2nd Red Close": round(candle_close, 2)
+                        })
+
+                        break
+
+                else:
+
+                    first_red_date = None
+
+        return matches
 
     except Exception:
-        return None
+
+        return []
 
 
 if st.button("SCAN NOW"):
-    matches = []
+
+    all_matches = []
 
     progress = st.progress(0)
 
     for number, symbol in enumerate(symbols):
-        result = scan_stock(symbol)
 
-        if result is not None:
-            matches.append(result)
+        stock_matches = scan_stock(symbol)
 
-        progress.progress((number + 1) / len(symbols))
+        if stock_matches:
+
+            all_matches.extend(stock_matches)
+
+        progress.progress(
+            (number + 1) / len(symbols)
+        )
 
     st.success("SCAN COMPLETE")
 
     st.write("Total Stocks:", len(symbols))
-    st.write("Matches:", len(matches))
+    st.write("Total Matches:", len(all_matches))
 
-    if matches:
-        result_df = pd.DataFrame(matches)
-        st.dataframe(result_df, use_container_width=True)
+    if all_matches:
+
+        result_df = pd.DataFrame(all_matches)
+
+        result_df = result_df.sort_values(
+            by="2nd Red Date",
+            ascending=False
+        )
+
+        st.dataframe(
+            result_df,
+            use_container_width=True
+        )
+
     else:
+
         st.warning("0 MATCHES")
