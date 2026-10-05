@@ -28,58 +28,94 @@ symbols = [
 
 
 # =========================================================
-# FIND CANDIDATE SWING LOWS
+# MEANINGFUL SWING LOW
 # =========================================================
 
-def find_candidate_lows(data):
+def is_swing_low(data, i):
 
-    candidates = []
+    if i < 2 or i >= len(data) - 2:
+        return False
 
-    for i in range(0, len(data) - 1):
+    low = float(
+        data.iloc[i]["Low"]
+    )
 
-        current_low = float(
-            data.iloc[i]["Low"]
-        )
+    left_1 = float(
+        data.iloc[i - 1]["Low"]
+    )
 
-        # -------------------------------------------------
-        # A meaningful low should be followed by recovery.
-        # We don't use a fixed 3/5 candle pivot here.
-        # -------------------------------------------------
+    left_2 = float(
+        data.iloc[i - 2]["Low"]
+    )
 
-        future_high = float(
-            data.iloc[i + 1:]["High"].max()
-        )
+    right_1 = float(
+        data.iloc[i + 1]["Low"]
+    )
 
-        move_percent = (
-            (future_high - current_low)
-            / current_low
-        ) * 100
+    right_2 = float(
+        data.iloc[i + 2]["Low"]
+    )
 
-        if move_percent >= 20:
-
-            candidates.append(i)
-
-    return candidates
+    return (
+        low < left_1
+        and
+        low < left_2
+        and
+        low < right_1
+        and
+        low < right_2
+    )
 
 
 # =========================================================
-# CHECK SETUP FROM A PARTICULAR SWING LOW
+# GET ALL MEANINGFUL SWING LOWS
 # =========================================================
 
-def check_setup(data, swing_index):
+def get_swing_lows(data):
+
+    lows = []
+
+    for i in range(
+        2,
+        len(data) - 2
+    ):
+
+        if is_swing_low(
+            data,
+            i
+        ):
+            lows.append(i)
+
+    return lows
+
+
+# =========================================================
+# TEST ONE SWING LOW
+# =========================================================
+
+def test_swing_low(
+    data,
+    swing_index
+):
 
     swing_low = float(
         data.iloc[swing_index]["Low"]
     )
 
-    swing_date = data.index[swing_index]
+    swing_date = data.index[
+        swing_index
+    ]
 
     target = swing_low * 1.20
 
-    target_reached = False
+    reached_20 = False
     target_index = None
 
     first_red_index = None
+
+    # -----------------------------------------------------
+    # START AFTER SWING LOW
+    # -----------------------------------------------------
 
     for i in range(
         swing_index + 1,
@@ -98,25 +134,63 @@ def check_setup(data, swing_index):
             data.iloc[i]["Close"]
         )
 
-        # -------------------------------------------------
-        # WAIT FOR +20%
-        # -------------------------------------------------
+        # =================================================
+        # BEFORE +20%
+        # =================================================
 
-        if not target_reached:
+        if not reached_20:
+
+            # ---------------------------------------------
+            # +20% reached
+            # ---------------------------------------------
 
             if candle_high >= target:
 
-                target_reached = True
+                reached_20 = True
                 target_index = i
 
-            # +20% candle itself is NEVER counted
-            # as one of the two red candles.
+                # +20% candle itself is NOT red #1
+                first_red_index = None
+
+                continue
+
+            # ---------------------------------------------
+            # BEFORE +20%
+            # CHECK 2 CONSECUTIVE RED
+            # ---------------------------------------------
+
+            is_red = (
+                candle_close < candle_open
+            )
+
+            if is_red:
+
+                if first_red_index is None:
+
+                    first_red_index = i
+
+                else:
+
+                    # 2 consecutive red candles
+                    # BEFORE +20%
+                    #
+                    # REJECT THIS SWING LOW
+
+                    return {
+                        "status": "REJECT",
+                        "reason":
+                            "2 RED BEFORE +20%"
+                    }
+
+            else:
+
+                first_red_index = None
 
             continue
 
-        # -------------------------------------------------
-        # AFTER +20%, FIND 2 CONSECUTIVE RED CANDLES
-        # -------------------------------------------------
+        # =================================================
+        # AFTER +20%
+        # =================================================
 
         is_red = (
             candle_close < candle_open
@@ -132,7 +206,10 @@ def check_setup(data, swing_index):
 
                 second_red_index = i
 
-                # Must be among latest 5 trading candles
+                # -----------------------------------------
+                # 2ND RED MUST BE IN LAST 5 TRADING DAYS
+                # -----------------------------------------
+
                 last_five_start = max(
                     0,
                     len(data) - 5
@@ -144,20 +221,26 @@ def check_setup(data, swing_index):
                 ):
 
                     return {
-                        "Swing Low": round(
-                            swing_low,
-                            2
-                        ),
+                        "status": "MATCH",
+
+                        "Symbol": None,
+
+                        "Swing Low":
+                            round(
+                                swing_low,
+                                2
+                            ),
 
                         "Swing Low Date":
                             swing_date.strftime(
                                 "%Y-%m-%d"
                             ),
 
-                        "+20% Level": round(
-                            target,
-                            2
-                        ),
+                        "+20% Level":
+                            round(
+                                target,
+                                2
+                            ),
 
                         "+20% Date":
                             data.index[
@@ -180,22 +263,30 @@ def check_setup(data, swing_index):
                                 "%Y-%m-%d"
                             ),
 
-                        "2nd Red Close": round(
-                            candle_close,
-                            2
-                        )
+                        "2nd Red Close":
+                            round(
+                                candle_close,
+                                2
+                            )
                     }
 
-                # This pair is too old.
-                # Start again from current red candle.
+                # Old 2-red pair
+                # Start looking again
+
                 first_red_index = i
 
         else:
 
-            # Not consecutive anymore
+            # Consecutive condition broken
             first_red_index = None
 
-    return None
+    # -----------------------------------------------------
+    # +20% NOT REACHED
+    # -----------------------------------------------------
+
+    return {
+        "status": "NO_MATCH"
+    }
 
 
 # =========================================================
@@ -249,41 +340,60 @@ def scan_stock(symbol):
             return None
 
         # =================================================
-        # FIND ALL CANDIDATE LOWS
+        # ALL MEANINGFUL SWING LOWS
         # =================================================
 
-        candidates = find_candidate_lows(
+        swing_lows = get_swing_lows(
             data
         )
 
-        if not candidates:
+        if not swing_lows:
             return None
 
         # =================================================
-        # MOST RECENT CANDIDATE FIRST
+        # START FROM MOST RECENT SWING LOW
         # =================================================
 
-        candidates = sorted(
-            candidates,
+        swing_lows = sorted(
+            swing_lows,
             reverse=True
         )
 
         # =================================================
-        # TEST MOST RECENT QUALIFYING LOW
+        # TRY EACH SWING LOW
+        # NEWER REJECTED LOW -> NEXT LOW
         # =================================================
 
-        for swing_index in candidates:
+        for swing_index in swing_lows:
 
-            result = check_setup(
+            result = test_swing_low(
                 data,
                 swing_index
             )
 
-            if result is not None:
+            if result is None:
+                continue
+
+            # ---------------------------------------------
+            # MATCH
+            # ---------------------------------------------
+
+            if result["status"] == "MATCH":
 
                 result["Symbol"] = symbol
 
                 return result
+
+            # ---------------------------------------------
+            # REJECT
+            #
+            # Automatically continue to
+            # next older swing low
+            # ---------------------------------------------
+
+            if result["status"] == "REJECT":
+
+                continue
 
         return None
 
@@ -293,7 +403,7 @@ def scan_stock(symbol):
 
 
 # =========================================================
-# SCAN
+# SCAN BUTTON
 # =========================================================
 
 if st.button("SCAN NOW"):
