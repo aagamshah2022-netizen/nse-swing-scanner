@@ -7,32 +7,33 @@ st.set_page_config(page_title="NSE Swing Scanner", page_icon="🔍")
 st.title("NSE Swing Scanner")
 
 symbols = [
-"RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
-"AXISBANK","KOTAKBANK","BAJFINANCE","MARUTI","SUNPHARMA","TITAN",
-"TRENT","TATAMOTORS","TATASTEEL","NTPC","POWERGRID","ONGC","COALINDIA",
-"ADANIENT","ADANIPORTS","BEL","HAL","BHEL","IRFC","RVNL","IREDA",
-"SUZLON","ETERNAL","PAYTM","JIOFIN","DLF","HINDALCO","VEDL","SAIL",
-"JSWSTEEL","JSWENERGY","TATAPOWER","GAIL","IOC","BPCL","CIPLA",
-"DRREDDY","DIVISLAB","LUPIN","AUBANK","FEDERALBNK","PNB","BANKBARODA",
-"CANBK","IDFCFIRSTB","INDUSINDBK","M&M","EICHERMOT","TVSMOTOR",
-"HEROMOTOCO","ASHOKLEY","APOLLOTYRE","BOSCHLTD","MOTHERSON",
-"BHARATFORG","CUMMINSIND","SIEMENS","ABB","CGPOWER","POLYCAB","KEI",
-"DIXON","VOLTAS","HAVELLS","VGUARD","ASTRAL","PIDILITIND","ASIANPAINT",
-"BERGEPAINT","BRITANNIA","NESTLEIND","MARICO","DABUR","GODREJCP",
-"COLPAL","HINDUNILVR","ZENSARTECH","COFORGE","PERSISTENT","MPHASIS",
-"LTIM","TECHM","HCLTECH","WIPRO"
+    "RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","ITC","LT",
+    "AXISBANK","KOTAKBANK","BAJFINANCE","MARUTI","SUNPHARMA","TITAN",
+    "TRENT","TATAMOTORS","TATASTEEL","NTPC","POWERGRID","ONGC","COALINDIA",
+    "ADANIENT","ADANIPORTS","BEL","HAL","BHEL","IRFC","RVNL","IREDA",
+    "SUZLON","ETERNAL","PAYTM","JIOFIN","DLF","HINDALCO","VEDL","SAIL",
+    "JSWSTEEL","JSWENERGY","TATAPOWER","GAIL","IOC","BPCL","CIPLA",
+    "DRREDDY","DIVISLAB","LUPIN","AUBANK","FEDERALBNK","PNB","BANKBARODA",
+    "CANBK","IDFCFIRSTB","INDUSINDBK","M&M","EICHERMOT","TVSMOTOR",
+    "HEROMOTOCO","ASHOKLEY","APOLLOTYRE","BOSCHLTD","MOTHERSON",
+    "BHARATFORG","CUMMINSIND","SIEMENS","ABB","CGPOWER","POLYCAB","KEI",
+    "DIXON","VOLTAS","HAVELLS","VGUARD","ASTRAL","PIDILITIND","ASIANPAINT",
+    "BERGEPAINT","BRITANNIA","NESTLEIND","MARICO","DABUR","GODREJCP",
+    "COLPAL","HINDUNILVR","ZENSARTECH","COFORGE","PERSISTENT","MPHASIS",
+    "LTIM","TECHM","HCLTECH","WIPRO"
 ]
+
 
 def scan_stock(symbol):
     try:
         data = yf.download(
-        symbol + ".NS",
-        period="400d",
-        interval="1d",
-        auto_adjust=False,
-        progress=False,
-        threads=False
-    )
+            symbol + ".NS",
+            period="400d",
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=False
+        )
 
         if data.empty:
             return None
@@ -40,105 +41,92 @@ def scan_stock(symbol):
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
 
-        data = data.dropna(subset=["Open","High","Low","Close"])
+        required = ["Open", "High", "Low", "Close"]
 
-    if len(data) < 10:
-        return None
+        if not all(col in data.columns for col in required):
+            return None
 
-    swing_index = None
+        data = data.dropna(subset=required)
 
-    for i in range(len(data)-2,0,-1):
+        if len(data) < 10:
+            return None
 
-        low = float(data.iloc[i]["Low"])
-        previous_low = float(data.iloc[i-1]["Low"])
-        next_low = float(data.iloc[i+1]["Low"])
+        swing_index = None
 
-        if low < previous_low and low < next_low:
-            swing_index = i
-            break
+        for i in range(len(data) - 2, 0, -1):
+            current_low = float(data.iloc[i]["Low"])
+            previous_low = float(data.iloc[i - 1]["Low"])
+            next_low = float(data.iloc[i + 1]["Low"])
 
-    if swing_index is None:
-        return None
+            if current_low < previous_low and current_low < next_low:
+                swing_index = i
+                break
 
-    swing_low = float(data.iloc[swing_index]["Low"])
-    swing_date = data.index[swing_index]
+        if swing_index is None:
+            return None
 
-    target = swing_low * 1.20
+        swing_low = float(data.iloc[swing_index]["Low"])
+        swing_date = data.index[swing_index]
 
-    reached = False
-    first_red = None
+        target = swing_low * 1.20
 
-    for i in range(swing_index+1,len(data)):
+        reached = False
+        first_red_date = None
 
-        candle_high = float(data.iloc[i]["High"])
-        candle_open = float(data.iloc[i]["Open"])
-        candle_close = float(data.iloc[i]["Close"])
+        for i in range(swing_index + 1, len(data)):
+            candle_open = float(data.iloc[i]["Open"])
+            candle_high = float(data.iloc[i]["High"])
+            candle_close = float(data.iloc[i]["Close"])
+            candle_date = data.index[i]
 
-        candle_date = data.index[i]
-
-        if not reached:
-
-            if candle_high >= target:
-                reached = True
+            if not reached:
+                if candle_high >= target:
+                    reached = True
                 continue
 
-        else:
-
             if candle_close < candle_open:
-
-                if first_red is None:
-                    first_red = candle_date
-
+                if first_red_date is None:
+                    first_red_date = candle_date
                 else:
-
                     return {
                         "Symbol": symbol,
-                        "Swing Low": round(swing_low,2),
-                        "+20% Level": round(target,2),
+                        "Swing Low": round(swing_low, 2),
+                        "+20% Level": round(target, 2),
                         "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
-                        "+20% Date": data.index[i-1].strftime("%Y-%m-%d"),
-                        "1st Red": first_red.strftime("%Y-%m-%d"),
-                        "2nd Red": candle_date.strftime("%Y-%m-%d"),
-                        "Close": round(candle_close,2)
+                        "+20% Date": data.index[i - 1].strftime("%Y-%m-%d"),
+                        "1st Red Date": first_red_date.strftime("%Y-%m-%d"),
+                        "2nd Red Date": candle_date.strftime("%Y-%m-%d"),
+                        "Current Close": round(candle_close, 2)
                     }
-
             else:
-                first_red = None
+                first_red_date = None
 
-    return None
+        return None
 
-except Exception:
-    return None
+    except Exception:
+        return None
+
 
 if st.button("SCAN NOW"):
+    matches = []
 
-matches = []
+    progress = st.progress(0)
 
-progress = st.progress(0)
+    for number, symbol in enumerate(symbols):
+        result = scan_stock(symbol)
 
-for number,symbol in enumerate(symbols):
+        if result is not None:
+            matches.append(result)
 
-    result = scan_stock(symbol)
+        progress.progress((number + 1) / len(symbols))
 
-    if result is not None:
-        matches.append(result)
+    st.success("SCAN COMPLETE")
 
-    progress.progress((number+1)/len(symbols))
+    st.write("Total Stocks:", len(symbols))
+    st.write("Matches:", len(matches))
 
-st.success("SCAN COMPLETE")
-
-st.write("Total Stocks:",len(symbols))
-st.write("Matches:",len(matches))
-
-if len(matches) > 0:
-
-    result_df = pd.DataFrame(matches)
-
-    st.dataframe(
-        result_df,
-        use_container_width=True
-    )
-
-else:
-
-    st.warning("0 MATCHES")
+    if matches:
+        result_df = pd.DataFrame(matches)
+        st.dataframe(result_df, use_container_width=True)
+    else:
+        st.warning("0 MATCHES")
