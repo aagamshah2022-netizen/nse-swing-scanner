@@ -25,8 +25,7 @@ symbols = [
 
 def scan_stock(symbol):
     try:
-
-    data = yf.download(
+        data = yf.download(
         symbol + ".NS",
         period="400d",
         interval="1d",
