@@ -1,0 +1,1 @@
+# nse-swing-scanner
