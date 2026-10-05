@@ -274,7 +274,7 @@ NSE_SYMBOLS = [
 ]
 
 def is_red(row):
-return row["Close"] < row["Open"]
+    return row["Close"] < row["Open"]
 
 def scan_current_stock(symbol, data):
 
