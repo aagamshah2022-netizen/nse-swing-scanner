@@ -25,93 +25,129 @@ symbols = [
     "COLPAL","HINDUNILVR","ZENSARTECH","COFORGE","PERSISTENT","MPHASIS",
     "LTIM","TECHM","HCLTECH","WIPRO",
 
-    # Kanohar Electric
     "KANOHAR"
 ]
 
 
 # =========================================================
-# FIND RECENT MEANINGFUL SWING LOW
+# FIND MEANINGFUL SWING LOW
 # =========================================================
 
 def find_swing_low(data):
 
-    # Search recent 30 trading sessions
+    # Recent area only
     start = max(0, len(data) - 30)
 
     candidates = []
 
-    for i in range(
-        start,
-        len(data) - 1
-    ):
+    for i in range(start, len(data) - 2):
 
-        low = float(
-            data.iloc[i]["Low"]
-        )
+        swing_low = float(data.iloc[i]["Low"])
 
-        # Lowest low of the recent downward leg
-        future_lows = [
-            float(data.iloc[j]["Low"])
-            for j in range(
-                i + 1,
-                len(data)
-            )
-        ]
+        # -------------------------------------------------
+        # Find first point where +20% is actually reached
+        # -------------------------------------------------
 
-        if not future_lows:
+        target = swing_low * 1.20
+        target_index = None
+
+        for j in range(i + 1, len(data)):
+
+            future_high = float(data.iloc[j]["High"])
+
+            if future_high >= target:
+                target_index = j
+                break
+
+        if target_index is None:
             continue
 
-        # A swing low should have a recovery afterwards
-        future_high = max(
-            float(data.iloc[j]["High"])
-            for j in range(
-                i + 1,
-                len(data)
-            )
-        )
+        # -------------------------------------------------
+        # Important:
+        # Before +20% target, if there is a LOWER low,
+        # this candle is not the meaningful swing low.
+        #
+        # Example:
+        # 16 Sep = 700
+        # 21 Sep = 763
+        #
+        # 16 Sep remains the meaningful low because
+        # 21 Sep is only a higher low inside the same move.
+        # -------------------------------------------------
+
+        lower_low_after = False
+
+        for k in range(i + 1, target_index + 1):
+
+            later_low = float(data.iloc[k]["Low"])
+
+            if later_low < swing_low:
+                lower_low_after = True
+                break
+
+        if lower_low_after:
+            continue
+
+        # -------------------------------------------------
+        # Check that this is actually a meaningful low
+        # rather than a tiny one-day fluctuation.
+        #
+        # Price should move sufficiently away from it.
+        # -------------------------------------------------
 
         move = (
-            (future_high - low)
-            / low
+            (float(data.iloc[target_index]["High"]) - swing_low)
+            / swing_low
         ) * 100
 
-        # Candidate must have at least 20% potential
         if move >= 20:
-            candidates.append(i)
+
+            candidates.append({
+                "index": i,
+                "target_index": target_index,
+                "low": swing_low
+            })
 
     if not candidates:
         return None
 
-    # Most recent meaningful low
-    return max(candidates)
+    # -----------------------------------------------------
+    # If multiple lows belong to the same recent move,
+    # choose the LOWEST meaningful swing low.
+    #
+    # This prevents a later higher-low such as 21 Sep
+    # from replacing the original 16 Sep swing low.
+    # -----------------------------------------------------
+
+    candidates = sorted(
+        candidates,
+        key=lambda x: x["low"]
+    )
+
+    best = candidates[0]
+
+    return best["index"]
 
 
 # =========================================================
-# CHECK ONE SWING LOW
+# CHECK FINAL SETUP
 # =========================================================
 
-def check_setup(
-    data,
-    swing_index
-):
+def check_setup(data, swing_index):
 
     swing_low = float(
         data.iloc[swing_index]["Low"]
     )
 
-    swing_date = data.index[
-        swing_index
-    ]
+    swing_date = data.index[swing_index]
 
     target = swing_low * 1.20
 
     target_index = None
-
     first_red_index = None
 
     # -----------------------------------------------------
-    # Scan forward from swing low
+    # Find first candle which reaches +20%
     # -----------------------------------------------------
 
     for i in range(
@@ -146,10 +182,6 @@ def check_setup(
 
                 continue
 
-            # No need to count red candles before
-            # the target. They are part of the setup
-            # development, not the final 2-red pattern.
-
             continue
 
         # =================================================
@@ -162,19 +194,18 @@ def check_setup(
 
         if is_red:
 
+            # First red candle
             if first_red_index is None:
 
                 first_red_index = i
 
             else:
 
+                # Second consecutive red candle
                 second_red_index = i
 
-                # Must be within last 5 trading days
-                if (
-                    second_red_index
-                    >= len(data) - 5
-                ):
+                # Must be recent
+                if second_red_index >= len(data) - 5:
 
                     return {
                         "Symbol": None,
@@ -224,7 +255,8 @@ def check_setup(
                             )
                     }
 
-                # Old pair
+                # Current red pair was too old.
+                # Start a new sequence from this candle.
                 first_red_index = i
 
         else:
@@ -254,6 +286,10 @@ def scan_stock(symbol):
 
         if data.empty:
             return None
+
+        # -------------------------------------------------
+        # Flatten yfinance MultiIndex
+        # -------------------------------------------------
 
         if isinstance(
             data.columns,
@@ -286,7 +322,7 @@ def scan_stock(symbol):
             return None
 
         # -------------------------------------------------
-        # FIND RECENT SWING LOW
+        # FIND MEANINGFUL SWING LOW
         # -------------------------------------------------
 
         swing_index = find_swing_low(
@@ -297,7 +333,7 @@ def scan_stock(symbol):
             return None
 
         # -------------------------------------------------
-        # CHECK FINAL SETUP
+        # CHECK +20% + 2 RED SETUP
         # -------------------------------------------------
 
         result = check_setup(
@@ -318,7 +354,7 @@ def scan_stock(symbol):
 
 
 # =========================================================
-# RUN
+# RUN SCANNER
 # =========================================================
 
 if st.button("SCAN NOW"):
@@ -343,6 +379,7 @@ if st.button("SCAN NOW"):
         )
 
         if result is not None:
+
             results.append(result)
 
         progress.progress(
