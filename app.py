@@ -17,8 +17,9 @@ st.set_page_config(
 )
 
 st.title("NSE Swing Scanner")
+
 st.caption(
-    "Full NSE Equity Universe • Major Swing Low → +20% → 2 Consecutive Red Candles"
+    "Major Swing Low → +20% → 2 Consecutive Red Candles → Current Setup"
 )
 
 
@@ -34,11 +35,14 @@ YF_PERIOD = "60d"
 YF_INTERVAL = "1d"
 
 SWING_LOOKBACK = 30
+
 BATCH_SIZE = 80
+
+RECENT_CANDLES = 5
 
 
 # =====================================================
-# GET NSE SYMBOLS
+# NSE SYMBOL LIST
 # =====================================================
 
 @st.cache_data(ttl=3600)
@@ -144,9 +148,10 @@ def find_swing_low(data):
         if target_index is None:
             continue
 
+
         # ---------------------------------------------
-        # AFTER THIS LOW, THERE MUST NOT BE
-        # A LOWER LOW BEFORE +20%
+        # LOWER LOW AFTER SWING LOW
+        # BEFORE +20% INVALIDATES THIS SWING
         # ---------------------------------------------
 
         lower_low_after = False
@@ -168,13 +173,21 @@ def find_swing_low(data):
         if lower_low_after:
             continue
 
+
+        # ---------------------------------------------
+        # CONFIRM 20% MOVE
+        # ---------------------------------------------
+
         move = (
             (
-                float(data.iloc[target_index]["High"])
+                float(
+                    data.iloc[target_index]["High"]
+                )
                 - swing_low
             )
             / swing_low
         ) * 100
+
 
         if move >= 20:
 
@@ -186,10 +199,13 @@ def find_swing_low(data):
                 }
             )
 
+
     if not candidates:
         return None
 
-    # Lowest valid swing low = major low
+
+    # Lowest valid swing low = major swing low
+
     candidates = sorted(
         candidates,
         key=lambda x: x["low"]
@@ -220,7 +236,7 @@ def check_setup(data, swing_index):
 
 
     # =================================================
-    # SCAN FORWARD FROM SWING LOW
+    # SCAN FORWARD
     # =================================================
 
     for i in range(
@@ -251,11 +267,12 @@ def check_setup(data, swing_index):
 
         if target_index is None:
 
+
             # ---------------------------------------------
-            # FIRST CHECK +20%
+            # +20% CHECK FIRST
             #
-            # The candle which FIRST reaches +20%
-            # is NOT counted as red candle.
+            # The +20% candle itself is NOT counted
+            # as a red candle.
             # ---------------------------------------------
 
             if high_price >= target:
@@ -268,9 +285,7 @@ def check_setup(data, swing_index):
 
 
             # ---------------------------------------------
-            # +20% NOT REACHED
-            #
-            # Check consecutive red candles
+            # STILL BELOW +20%
             # ---------------------------------------------
 
             if is_red:
@@ -285,7 +300,7 @@ def check_setup(data, swing_index):
                     # TWO CONSECUTIVE RED CANDLES
                     # BEFORE +20%
                     #
-                    # INVALID SETUP
+                    # SETUP INVALID
                     # -------------------------------------
 
                     return None
@@ -303,99 +318,124 @@ def check_setup(data, swing_index):
 
         if is_red:
 
+
             # ---------------------------------------------
-            # FIRST RED CANDLE
+            # FIRST RED
             # ---------------------------------------------
 
             if first_red_index is None:
 
                 first_red_index = i
 
+                continue
 
-            else:
+
+            # ---------------------------------------------
+            # SECOND CONSECUTIVE RED
+            # ---------------------------------------------
+
+            second_red_index = i
+
+
+            # =================================================
+            # CHECK WHETHER THIS RED PAIR IS CURRENT
+            # =================================================
+
+            recent_start = max(
+                0,
+                len(data) - RECENT_CANDLES
+            )
+
+
+            if second_red_index < recent_start:
 
                 # -----------------------------------------
-                # SECOND CONSECUTIVE RED CANDLE
+                # THIS SETUP IS OLD.
+                #
+                # IMPORTANT:
+                # DO NOT KEEP SEARCHING FOR ANOTHER
+                # RED PAIR FOR THE SAME +20% EVENT.
+                #
+                # THE OLD SETUP HAS EXPIRED.
                 # -----------------------------------------
 
-                second_red_index = i
+                return None
 
 
-                # -----------------------------------------
-                # MUST BE RECENT
-                # -----------------------------------------
+            # =================================================
+            # CURRENT VALID SETUP
+            # =================================================
 
-                if second_red_index >= len(data) - 5:
+            return {
 
-                    return {
+                "Symbol": "",
 
-                        "Symbol": "",
+                "Swing Low":
+                    round(
+                        swing_low,
+                        2
+                    ),
 
-                        "Swing Low":
-                            round(
-                                swing_low,
-                                2
-                            ),
+                "Swing Low Date":
+                    swing_date.strftime(
+                        "%Y-%m-%d"
+                    ),
 
-                        "Swing Low Date":
-                            swing_date.strftime(
-                                "%Y-%m-%d"
-                            ),
+                "+20% Level":
+                    round(
+                        target,
+                        2
+                    ),
 
-                        "+20% Level":
-                            round(
-                                target,
-                                2
-                            ),
+                "+20% Date":
+                    data.index[
+                        target_index
+                    ].strftime(
+                        "%Y-%m-%d"
+                    ),
 
-                        "+20% Date":
-                            data.index[
-                                target_index
-                            ].strftime(
-                                "%Y-%m-%d"
-                            ),
+                "1st Red Date":
+                    data.index[
+                        first_red_index
+                    ].strftime(
+                        "%Y-%m-%d"
+                    ),
 
-                        "1st Red Date":
-                            data.index[
-                                first_red_index
-                            ].strftime(
-                                "%Y-%m-%d"
-                            ),
+                "2nd Red Date":
+                    data.index[
+                        second_red_index
+                    ].strftime(
+                        "%Y-%m-%d"
+                    ),
 
-                        "2nd Red Date":
-                            data.index[
-                                second_red_index
-                            ].strftime(
-                                "%Y-%m-%d"
-                            ),
-
-                        "2nd Red Close":
-                            round(
-                                close_price,
-                                2
-                            )
-                    }
-
-
-                # Pair too old.
-                # Start a new sequence.
-                first_red_index = i
+                "2nd Red Close":
+                    round(
+                        close_price,
+                        2
+                    )
+            }
 
 
         else:
 
             # ---------------------------------------------
-            # GREEN CANDLE BREAKS RED SEQUENCE
+            # GREEN CANDLE
+            #
+            # Consecutive red sequence broken.
             # ---------------------------------------------
 
             first_red_index = None
 
 
+    # =================================================
+    # NO CURRENT SETUP
+    # =================================================
+
     return None
 
 
 # =====================================================
-# PROCESS ONE STOCK
+# PROCESS STOCK
 # =====================================================
 
 def process_stock(
@@ -410,7 +450,7 @@ def process_stock(
 
 
         # ---------------------------------------------
-        # FIX MULTIINDEX DATA
+        # FIX MULTIINDEX
         # ---------------------------------------------
 
         if isinstance(
@@ -482,7 +522,7 @@ def process_stock(
 
 
         # ---------------------------------------------
-        # CHECK COMPLETE SETUP
+        # CHECK SETUP
         # ---------------------------------------------
 
         result = check_setup(
@@ -536,7 +576,7 @@ def download_batch(symbols):
 
 
 # =====================================================
-# GET SINGLE STOCK FROM BATCH
+# GET STOCK FROM BATCH
 # =====================================================
 
 def get_stock_from_batch(
@@ -621,7 +661,7 @@ if st.button(
 
 
     # ---------------------------------------------
-    # LOAD NSE LIST
+    # NSE SYMBOLS
     # ---------------------------------------------
 
     symbols = get_nse_symbols()
@@ -643,9 +683,7 @@ if st.button(
 
     results = []
 
-
     progress = st.progress(0)
-
 
     total = len(symbols)
 
@@ -666,7 +704,7 @@ if st.button(
 
 
     # =================================================
-    # PROCESS ALL BATCHES
+    # SCAN ALL BATCHES
     # =================================================
 
     for batch_number, batch in enumerate(
@@ -724,7 +762,7 @@ if st.button(
 
 
     # =================================================
-    # RESULTS
+    # FINISHED
     # =================================================
 
     status.empty()
@@ -746,6 +784,10 @@ if st.button(
         len(results)
     )
 
+
+    # =================================================
+    # SHOW RESULTS
+    # =================================================
 
     if results:
 
