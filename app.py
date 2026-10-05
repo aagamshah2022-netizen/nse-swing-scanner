@@ -33,7 +33,7 @@ def scan_stock(symbol):
 
         data = yf.download(
             symbol + ".NS",
-            period="400d",
+            period="60d",
             interval="1d",
             auto_adjust=False,
             progress=False,
@@ -88,7 +88,7 @@ def scan_stock(symbol):
                 candle_close = float(data.iloc[i]["Close"])
                 candle_date = data.index[i]
 
-                # First find +20% move
+                # Find +20% move
                 if not reached:
 
                     if candle_high >= target:
@@ -97,7 +97,7 @@ def scan_stock(symbol):
 
                     continue
 
-                # After +20% candle, look for red candles
+                # Red candle
                 if candle_close < candle_open:
 
                     # First red candle
@@ -123,10 +123,28 @@ def scan_stock(symbol):
 
                 else:
 
-                    # Red candles consecutive hone chahiye
+                    # Consecutive red candles toot gayi
                     first_red_date = None
 
-        # Sirf latest qualifying setup
+        if latest_match is None:
+            return None
+
+        # 2nd red candle must be within last 5 trading days
+        second_red_position = None
+
+        for i in range(len(data)):
+            if data.index[i].strftime("%Y-%m-%d") == latest_match["2nd Red Date"]:
+                second_red_position = i
+                break
+
+        if second_red_position is None:
+            return None
+
+        days_from_latest = (len(data) - 1) - second_red_position
+
+        if days_from_latest > 4:
+            return None
+
         return latest_match
 
     except Exception:
@@ -154,13 +172,12 @@ if st.button("SCAN NOW"):
     st.success("SCAN COMPLETE")
 
     st.write("Total Stocks:", len(symbols))
-    st.write("Total Matches:", len(all_matches))
+    st.write("Current Matches:", len(all_matches))
 
     if all_matches:
 
         result_df = pd.DataFrame(all_matches)
 
-        # Latest setup first
         result_df = result_df.sort_values(
             by="2nd Red Date",
             ascending=False
@@ -173,4 +190,4 @@ if st.button("SCAN NOW"):
 
     else:
 
-        st.warning("0 MATCHES")
+        st.warning("0 CURRENT MATCHES")
