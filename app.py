@@ -38,7 +38,7 @@ def scan_stock(symbol):
         )
 
         if data.empty:
-            return []
+            return None
 
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
@@ -46,14 +46,14 @@ def scan_stock(symbol):
         required = ["Open", "High", "Low", "Close"]
 
         if not all(col in data.columns for col in required):
-            return []
+            return None
 
         data = data.dropna(subset=required)
 
         if len(data) < 10:
-            return []
+            return None
 
-        matches = []
+        latest_match = None
 
         for swing_index in range(1, len(data) - 2):
 
@@ -69,7 +69,6 @@ def scan_stock(symbol):
 
             swing_low = current_low
             swing_date = data.index[swing_index]
-
             target = swing_low * 1.20
 
             reached = False
@@ -99,7 +98,7 @@ def scan_stock(symbol):
 
                     else:
 
-                        matches.append({
+                        latest_match = {
                             "Symbol": symbol,
                             "Swing Low": round(swing_low, 2),
                             "+20% Level": round(target, 2),
@@ -107,8 +106,8 @@ def scan_stock(symbol):
                             "+20% Date": target_date.strftime("%Y-%m-%d"),
                             "1st Red Date": first_red_date.strftime("%Y-%m-%d"),
                             "2nd Red Date": candle_date.strftime("%Y-%m-%d"),
-                            "2nd Red Close": round(candle_close, 2)
-                        })
+                            "Current Close": round(candle_close, 2)
+                        }
 
                         break
 
@@ -116,11 +115,11 @@ def scan_stock(symbol):
 
                     first_red_date = None
 
-        return matches
+        return latest_match
 
     except Exception:
 
-        return []
+        return None
 
 
 if st.button("SCAN NOW"):
