@@ -2,7 +2,10 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-st.set_page_config(page_title="NSE Swing Scanner", page_icon="🔍")
+st.set_page_config(
+    page_title="NSE Swing Scanner",
+    page_icon="🔍"
+)
 
 st.title("NSE Swing Scanner")
 
@@ -61,6 +64,7 @@ def scan_stock(symbol):
             previous_low = float(data.iloc[swing_index - 1]["Low"])
             next_low = float(data.iloc[swing_index + 1]["Low"])
 
+            # Swing Low
             if not (
                 current_low < previous_low
                 and current_low < next_low
@@ -69,6 +73,8 @@ def scan_stock(symbol):
 
             swing_low = current_low
             swing_date = data.index[swing_index]
+
+            # +20% target
             target = swing_low * 1.20
 
             reached = False
@@ -82,6 +88,7 @@ def scan_stock(symbol):
                 candle_close = float(data.iloc[i]["Close"])
                 candle_date = data.index[i]
 
+                # First find +20% move
                 if not reached:
 
                     if candle_high >= target:
@@ -90,12 +97,15 @@ def scan_stock(symbol):
 
                     continue
 
+                # After +20% candle, look for red candles
                 if candle_close < candle_open:
 
+                    # First red candle
                     if first_red_date is None:
 
                         first_red_date = candle_date
 
+                    # Second consecutive red candle
                     else:
 
                         latest_match = {
@@ -106,15 +116,17 @@ def scan_stock(symbol):
                             "+20% Date": target_date.strftime("%Y-%m-%d"),
                             "1st Red Date": first_red_date.strftime("%Y-%m-%d"),
                             "2nd Red Date": candle_date.strftime("%Y-%m-%d"),
-                            "Current Close": round(candle_close, 2)
+                            "2nd Red Close": round(candle_close, 2)
                         }
 
                         break
 
                 else:
 
+                    # Red candles consecutive hone chahiye
                     first_red_date = None
 
+        # Sirf latest qualifying setup
         return latest_match
 
     except Exception:
@@ -130,11 +142,10 @@ if st.button("SCAN NOW"):
 
     for number, symbol in enumerate(symbols):
 
-        stock_matches = scan_stock(symbol)
+        stock_match = scan_stock(symbol)
 
-        if stock_matches:
-
-            all_matches.extend(stock_matches)
+        if stock_match is not None:
+            all_matches.append(stock_match)
 
         progress.progress(
             (number + 1) / len(symbols)
@@ -149,6 +160,7 @@ if st.button("SCAN NOW"):
 
         result_df = pd.DataFrame(all_matches)
 
+        # Latest setup first
         result_df = result_df.sort_values(
             by="2nd Red Date",
             ascending=False
