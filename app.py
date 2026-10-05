@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
 
@@ -13,227 +12,348 @@ layout="wide"
 st.title("📈 NSE Swing Scanner")
 st.caption("CURRENT SCAN — Swing Low → +20% High → 2 Red Candles")
 
-# ---------------------------------------------------------
-
-# SETTINGS
-
-# ---------------------------------------------------------
-
 MIN_MOVE = 0.20
-RED_CANDLES_REQUIRED = 2
 HISTORY_DAYS = 400
 
-# ---------------------------------------------------------
-
-# NSE STOCK UNIVERSE
-
-# ---------------------------------------------------------
-
 NSE_SYMBOLS = [
-"20MICRONS", "21STCENMGM", "360ONE", "3IINFOTECH",
-"3MINDIA", "5PAISA", "63MOONS", "AARTIDRUGS",
-"AARTIIND", "AAVAS", "ABB", "ABBOTINDIA",
-"ABCAPITAL", "ABFRL", "ACC", "ACE",
-"ACI", "ADANIENT", "ADANIGREEN", "ADANIPORTS",
-"ADANIPOWER", "ADFFOODS", "ADORWELD", "AIAENG",
-"AJANTAPHARM", "AKUMS", "ALEMBICLTD", "ALKEM",
-"ALKYLAMINE", "ALLCARGO", "AMARAJABAT", "AMBER",
-"AMBUJACEM", "ANANDRATHI", "ANANTRAJ", "ANGELONE",
-"ANUP", "APARINDS", "APLAPOLLO", "APLLTD",
-"APOLLOHOSP", "APOLLOTYRE", "ARVIND", "ASHOKLEY",
-"ASIANPAINT", "ASTERDM", "ASTRAL", "ATGL",
-"ATUL", "AUBANK", "AUROPHARMA", "AVANTIFEED",
-"AXISBANK", "BAJAJ-AUTO", "BAJAJFINSV", "BAJAJHLDNG",
-"BAJFINANCE", "BALKRISIND", "BALRAMCHIN", "BANDHANBNK",
-"BANKBARODA", "BANKINDIA", "BATAINDIA", "BAYERCROP",
-"BEL", "BEML", "BERGEPAINT", "BHARATFORG",
-"BHARTIARTL", "BHEL", "BIOCON", "BIRLACORPN",
-"BLUESTARCO", "BOSCHLTD", "BPCL", "BRIGADE",
-"BRITANNIA", "BSE", "BSOFT", "CANBK",
-"CANFINHOME", "CAPLIPOINT", "CARBORUNIV", "CASTROLIND",
-"CDSL", "CEATLTD", "CENTRALBK", "CENTURYPLY",
-"CESC", "CGPOWER", "CHALET", "CHAMBLFERT",
-"CHEMPLASTS", "CHENNPETRO", "CHOLAFIN", "CIPLA",
-"CLEAN", "COALINDIA", "COCHINSHIP", "COFORGE",
-"COLPAL", "CONCOR", "COROMANDEL", "CREDITACC",
-"CROMPTON", "CUB", "CUMMINSIND", "CYIENT",
-"DABUR", "DALBHARAT", "DATAPATTNS", "DCMSHRIRAM",
-"DEEPAKFERT", "DEEPAKNTR", "DELHIVERY", "DELTACORP",
-"DEVYANI", "DHANI", "DIVISLAB", "DIXON",
-"DLF", "DMART", "DRREDDY", "EASEMYTRIP",
-"ECLERX", "EICHERMOT", "EIDPARRY", "EIHOTEL",
-"ELGIEQUIP", "EMAMILTD", "EMCURE", "ENDURANCE",
-"ENGINERSIN", "EQUITASBNK", "ERIS", "ESCORTS",
-"ETERNAL", "EXIDEIND", "FACT", "FEDERALBNK",
-"FINCABLES", "FINEORG", "FINPIPE", "FIVESTAR",
-"FLUOROCHEM", "FORTIS", "FSL", "GAIL",
-"GESHIP", "GICRE", "GLAND", "GLENMARK",
-"GMRAIRPORT", "GNFC", "GODFRYPHLP", "GODREJAGRO",
-"GODREJCP", "GODREJIND", "GODREJPROP", "GRANULES",
-"GRAPHITE", "GRASIM", "GREAVESCOT", "GREENPANEL",
-"GRINDWELL", "GRINFRA", "GSFC", "GSPL",
-"GUJGASLTD", "HAL", "HAPPSTMNDS", "HAVELLS",
-"HCLTECH", "HDFCAMC", "HDFCBANK", "HDFCLIFE",
-"HEADSUP", "HEG", "HEROMOTOCO", "HFCL",
-"HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR",
-"HINDZINC", "HOMEFIRST", "HONASA", "HUDCO",
-"ICICIBANK", "ICICIGI", "ICICIPRULI", "IDBI",
-"IDEA", "IDFCFIRSTB", "IEX", "IGL",
-"IIFL", "INDHOTEL", "INDIACEM", "INDIAMART",
-"INDIANB", "INDIGO", "INDIGOPNTS", "INDUSINDBK",
-"INDUSTOWER", "INFY", "INOXWIND", "INTELLECT",
-"IOB", "IOC", "IPCALAB", "IRB",
-"IRCON", "IRCTC", "IREDA", "IRFC",
-"ITC", "ITI", "J&KBANK", "JBCHEPHARM",
-"JINDALSAW", "JINDALSTEL", "JIOFIN", "JKCEMENT",
-"JKLAKSHMI", "JKPAPER", "JMFINANCIL", "JSL",
-"JSWENERGY", "JSWSTEEL", "JUBLFOOD", "JUSTDIAL",
-"JYOTHYLAB", "KAJARIACER", "KALYANKJIL", "KANSAINER",
-"KARURVYSYA", "KEC", "KEI", "KFINTECH",
-"KIRLOSBROS", "KIRLOSENG", "KNRCON", "KOTAKBANK",
-"KPIGREEN", "KPIL", "KPRMILL", "KRBL",
-"LALPATHLAB", "LATENTVIEW", "LAURUSLABS", "LEMONTREE",
-"LICHSGFIN", "LICI", "LINDEINDIA", "LODHA",
-"LT", "LTIM", "LTTS", "LUPIN",
-"M&M", "M&MFIN", "MAHABANK", "MAHINDCIE",
-"MANAPPURAM", "MANKIND", "MARICO", "MARUTI",
-"MAXHEALTH", "MAZDOCK", "MCX", "MEDANTA",
-"MEDPLUS", "METROBRAND", "MFSL", "MGL",
-"MHRIL", "MINDACORP", "MMTC", "MOIL",
-"MOTHERSON", "MOTILALOFS", "MPHASIS", "MRF",
-"MUTHOOTFIN", "NATCOPHARM", "NATIONALUM", "NAUKRI",
-"NAVINFLUOR", "NBCC", "NCC", "NESTLEIND",
-"NHPC", "NIACL", "NLCINDIA", "NMDC",
-"NSLNISP", "NTPC", "NUVOCO", "NYKAA",
-"OBEROIRLTY", "OFSS", "OIL", "OLECTRA",
-"ONGC", "PAGEIND", "PATANJALI", "PAYTM",
-"PCBL", "PEL", "PERSISTENT", "PETRONET",
-"PFC", "PFIZER", "PGEL", "PHOENIXLTD",
-"PIDILITIND", "PIIND", "PNB", "PNCINFRA",
-"POLICYBZR", "POLYCAB", "POWERGRID", "POWERMECH",
-"PPLPHARMA", "PRAJIND", "PRESTIGE", "PRICOLLTD",
-"PRIVISCL", "PVRINOX", "RADICO", "RAILTEL",
-"RAIN", "RAJESHEXPO", "RALLIS", "RAMCOCEM",
-"RBLBANK", "RECLTD", "REDINGTON", "RELIANCE",
-"RHIM", "RITES", "RKFORGE", "ROUTE",
-"RVNL", "SAIL", "SAMMAANCAP", "SANDUMA",
-"SBFC", "SBICARD", "SBILIFE", "SBIN",
-"SCHAEFFLER", "SCI", "SHREECEM", "SHRIRAMFIN",
-"SIEMENS", "SJVN", "SKFINDIA", "SOLARINDS",
-"SONACOMS", "SONATSOFTW", "SRF", "STARHEALTH",
-"SUMICHEM", "SUNPHARMA", "SUNTV", "SUPREMEIND",
-"SURYAROSNI", "SUZLON", "SWANENERGY", "SWSOLAR",
-"TATACHEM", "TATACOMM", "TATACONSUM", "TATAELXSI",
-"TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS",
-"TECHM", "TECHNO", "THERMAX", "TIINDIA",
-"TIMKEN", "TITAN", "TORNTPHARM", "TORNTPOWER",
-"TRENT", "TRIDENT", "TRIVENI", "TVSMOTOR",
-"UBL", "UCOBANK", "UFLEX", "UNIONBANK",
-"UNITDSPR", "UPL", "USHAMART", "UTIAMC",
-"VAIBHAVGBL", "VAKRANGEE", "VARROC", "VEDL",
-"VGUARD", "VIJAYA", "VINATIORGA", "VIPIND",
-"VOLTAS", "WELCORP", "WELSPUNLIV", "WESTLIFE",
-"WHIRLPOOL", "WIPRO", "WOCKPHARMA", "YESBANK",
-"ZEEL", "ZENSARTECH", "ZENTEC", "ZYDUSLIFE"
+"20MICRONS",
+"360ONE",
+"3MINDIA",
+"5PAISA",
+"AARTIIND",
+"ABB",
+"ABCAPITAL",
+"ABFRL",
+"ACC",
+"ACE",
+"ADANIENT",
+"ADANIGREEN",
+"ADANIPORTS",
+"ADANIPOWER",
+"AIAENG",
+"AJANTAPHARM",
+"ALKEM",
+"AMBER",
+"AMBUJACEM",
+"APARINDS",
+"APLAPOLLO",
+"APOLLOHOSP",
+"APOLLOTYRE",
+"ASHOKLEY",
+"ASIANPAINT",
+"ASTRAL",
+"ATGL",
+"AUBANK",
+"AUROPHARMA",
+"AXISBANK",
+"BAJAJ-AUTO",
+"BAJAJFINSV",
+"BAJAJHLDNG",
+"BAJFINANCE",
+"BALKRISIND",
+"BANDHANBNK",
+"BANKBARODA",
+"BANKINDIA",
+"BEL",
+"BEML",
+"BERGEPAINT",
+"BHARATFORG",
+"BHARTIARTL",
+"BHEL",
+"BIOCON",
+"BOSCHLTD",
+"BPCL",
+"BRIGADE",
+"BRITANNIA",
+"BSE",
+"CANBK",
+"CANFINHOME",
+"CDSL",
+"CENTRALBK",
+"CESC",
+"CGPOWER",
+"CHAMBLFERT",
+"CHOLAFIN",
+"CIPLA",
+"COALINDIA",
+"COCHINSHIP",
+"COFORGE",
+"COLPAL",
+"CONCOR",
+"COROMANDEL",
+"CROMPTON",
+"CUB",
+"CUMMINSIND",
+"CYIENT",
+"DABUR",
+"DALBHARAT",
+"DEEPAKNTR",
+"DELHIVERY",
+"DIVISLAB",
+"DIXON",
+"DLF",
+"DMART",
+"DRREDDY",
+"EICHERMOT",
+"EMAMILTD",
+"ENDURANCE",
+"ESCORTS",
+"ETERNAL",
+"EXIDEIND",
+"FEDERALBNK",
+"FINCABLES",
+"FORTIS",
+"GAIL",
+"GESHIP",
+"GICRE",
+"GLENMARK",
+"GODREJCP",
+"GODREJIND",
+"GODREJPROP",
+"GRANULES",
+"GRASIM",
+"GSFC",
+"GSPL",
+"GUJGASLTD",
+"HAL",
+"HAVELLS",
+"HCLTECH",
+"HDFCAMC",
+"HDFCBANK",
+"HDFCLIFE",
+"HEROMOTOCO",
+"HFCL",
+"HINDALCO",
+"HINDCOPPER",
+"HINDPETRO",
+"HINDUNILVR",
+"HINDZINC",
+"HUDCO",
+"ICICIBANK",
+"ICICIGI",
+"ICICIPRULI",
+"IDBI",
+"IDEA",
+"IDFCFIRSTB",
+"IEX",
+"IGL",
+"IIFL",
+"INDHOTEL",
+"INDIAMART",
+"INDIANB",
+"INDIGO",
+"INDUSINDBK",
+"INDUSTOWER",
+"INFY",
+"INOXWIND",
+"IOB",
+"IOC",
+"IRB",
+"IRCON",
+"IRCTC",
+"IREDA",
+"IRFC",
+"ITC",
+"JINDALSTEL",
+"JIOFIN",
+"JKCEMENT",
+"JSL",
+"JSWENERGY",
+"JSWSTEEL",
+"JUBLFOOD",
+"KALYANKJIL",
+"KARURVYSYA",
+"KEC",
+"KEI",
+"KFINTECH",
+"KOTAKBANK",
+"KPIL",
+"KPRMILL",
+"LALPATHLAB",
+"LAURUSLABS",
+"LICHSGFIN",
+"LICI",
+"LODHA",
+"LT",
+"LTIM",
+"LTTS",
+"LUPIN",
+"M&M",
+"M&MFIN",
+"MAHABANK",
+"MANAPPURAM",
+"MARICO",
+"MARUTI",
+"MAXHEALTH",
+"MAZDOCK",
+"MCX",
+"MGL",
+"MOTHERSON",
+"MOTILALOFS",
+"MPHASIS",
+"MRF",
+"MUTHOOTFIN",
+"NATIONALUM",
+"NAUKRI",
+"NBCC",
+"NCC",
+"NESTLEIND",
+"NHPC",
+"NMDC",
+"NTPC",
+"NYKAA",
+"OBEROIRLTY",
+"OFSS",
+"OIL",
+"ONGC",
+"PAGEIND",
+"PAYTM",
+"PERSISTENT",
+"PETRONET",
+"PFC",
+"PHOENIXLTD",
+"PIDILITIND",
+"PIIND",
+"PNB",
+"POLICYBZR",
+"POLYCAB",
+"POWERGRID",
+"PRESTIGE",
+"PVRINOX",
+"RBLBANK",
+"RECLTD",
+"RELIANCE",
+"RVNL",
+"SAIL",
+"SBICARD",
+"SBILIFE",
+"SBIN",
+"SHREECEM",
+"SHRIRAMFIN",
+"SIEMENS",
+"SJVN",
+"SOLARINDS",
+"SONACOMS",
+"SRF",
+"SUNPHARMA",
+"SUPREMEIND",
+"SUZLON",
+"SWSOLAR",
+"TATACHEM",
+"TATACOMM",
+"TATACONSUM",
+"TATAELXSI",
+"TATAMOTORS",
+"TATAPOWER",
+"TATASTEEL",
+"TCS",
+"TECHM",
+"THERMAX",
+"TIINDIA",
+"TITAN",
+"TORNTPHARM",
+"TORNTPOWER",
+"TRENT",
+"TRIDENT",
+"TVSMOTOR",
+"UBL",
+"UCOBANK",
+"UNIONBANK",
+"UPL",
+"UTIAMC",
+"VEDL",
+"VGUARD",
+"VOLTAS",
+"WELCORP",
+"WELSPUNLIV",
+"WIPRO",
+"YESBANK",
+"ZEEL",
+"ZENSARTECH",
+"ZYDUSLIFE"
 ]
 
-# ---------------------------------------------------------
-
-# RED CANDLE
-
-# ---------------------------------------------------------
-
 def is_red(row):
-    return row["Close"] < row["Open"]
+return row["Close"] < row["Open"]
 
-# ---------------------------------------------------------
-
-# SCAN CURRENT SETUP
-
-# ---------------------------------------------------------
-
-def scan_current_stock(symbol, df):
+def scan_current_stock(symbol, data):
 
 ```
-if df is None or df.empty:
+if data is None or data.empty:
     return None
 
-df = df.copy()
+data = data.copy()
 
-if isinstance(df.columns, pd.MultiIndex):
-    df.columns = df.columns.get_level_values(0)
+if isinstance(data.columns, pd.MultiIndex):
+    data.columns = data.columns.get_level_values(0)
 
 required = ["Open", "High", "Low", "Close"]
 
-for col in required:
-    if col not in df.columns:
-        return None
-
-df = df[required].copy()
-
-for col in required:
-    df[col] = pd.to_numeric(df[col], errors="coerce")
-
-df = df.dropna()
-
-if len(df) < 5:
+if not all(column in data.columns for column in required):
     return None
 
-df = df.sort_index()
+data = data[required].copy()
 
-# -----------------------------------------------------
-# We only care about the LATEST setup.
-# Start from the newest candle and work backwards.
-# -----------------------------------------------------
+for column in required:
+    data[column] = pd.to_numeric(
+        data[column],
+        errors="coerce"
+    )
 
-active_setup = False
-swing_index = None
+data = data.dropna()
+data = data.sort_index()
 
-# Find latest valid swing low
-for i in range(len(df) - 2, 0, -1):
+if len(data) < 5:
+    return None
 
-    current = df.iloc[i]
-    previous = df.iloc[i - 1]
-    next_candle = df.iloc[i + 1]
+latest_swing_index = None
+
+for i in range(len(data) - 2, 0, -1):
+
+    current = data.iloc[i]
+    previous = data.iloc[i - 1]
+    next_candle = data.iloc[i + 1]
 
     if (
         current["Low"] < previous["Low"]
         and current["Low"] < next_candle["Low"]
     ):
-        swing_index = i
+        latest_swing_index = i
         break
 
-if swing_index is None:
+if latest_swing_index is None:
     return None
 
-swing_low = float(df.iloc[swing_index]["Low"])
-swing_date = df.index[swing_index]
-target_20 = swing_low * 1.20
+swing_low = float(
+    data.iloc[latest_swing_index]["Low"]
+)
 
-red_count = 0
+swing_date = data.index[latest_swing_index]
+
+target_20 = swing_low * (1 + MIN_MOVE)
+
 reached_20 = False
 target_date = None
+red_count = 0
 
-# -----------------------------------------------------
-# Evaluate candles AFTER swing low
-# -----------------------------------------------------
+first_red_date = None
 
-for i in range(swing_index + 1, len(df)):
+for i in range(
+    latest_swing_index + 1,
+    len(data)
+):
 
-    candle = df.iloc[i]
-
-    # -----------------------------------------------
-    # BEFORE +20%
-    # -----------------------------------------------
+    candle = data.iloc[i]
+    candle_date = data.index[i]
 
     if not reached_20:
 
-        # +20% candle itself is NOT red-counted
         if candle["High"] >= target_20:
 
             reached_20 = True
-            target_date = df.index[i]
+            target_date = candle_date
             red_count = 0
+            first_red_date = None
 
             continue
 
@@ -241,8 +361,7 @@ for i in range(swing_index + 1, len(df)):
 
             red_count += 1
 
-            if red_count >= RED_CANDLES_REQUIRED:
-
+            if red_count >= 2:
                 return None
 
         else:
@@ -251,58 +370,65 @@ for i in range(swing_index + 1, len(df)):
 
         continue
 
-    # -----------------------------------------------
-    # AFTER +20%
-    # -----------------------------------------------
+    if is_red(candle):
 
-    if reached_20:
+        if red_count == 0:
+            first_red_date = candle_date
 
-        if is_red(candle):
+        red_count += 1
 
-            red_count += 1
+        if red_count >= 2:
 
-            if red_count >= RED_CANDLES_REQUIRED:
+            return {
+                "Symbol": symbol,
+                "Swing Low": round(
+                    swing_low,
+                    2
+                ),
+                "Swing Low Date": swing_date.strftime(
+                    "%Y-%m-%d"
+                ),
+                "+20% Level": round(
+                    target_20,
+                    2
+                ),
+                "+20% Date": target_date.strftime(
+                    "%Y-%m-%d"
+                ),
+                "1st Red": first_red_date.strftime(
+                    "%Y-%m-%d"
+                ),
+                "2nd Red": candle_date.strftime(
+                    "%Y-%m-%d"
+                ),
+                "Current Close": round(
+                    float(candle["Close"]),
+                    2
+                ),
+                "Status": "MATCH"
+            }
 
-                return {
-                    "Symbol": symbol,
-                    "Swing Low": round(swing_low, 2),
-                    "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
-                    "+20% Level": round(target_20, 2),
-                    "+20% Date": target_date.strftime("%Y-%m-%d"),
-                    "1st Red": (
-                        df.index[i - 1].strftime("%Y-%m-%d")
-                        if i >= 1 else ""
-                    ),
-                    "2nd Red": df.index[i].strftime("%Y-%m-%d"),
-                    "Current Close": round(float(candle["Close"]), 2),
-                    "Status": "MATCH"
-                }
+    else:
 
-        else:
-
-            red_count = 0
+        red_count = 0
+        first_red_date = None
 
 return None
 ```
 
-# ---------------------------------------------------------
-
-# DOWNLOAD DATA
-
-# ---------------------------------------------------------
-
 def download_stock(symbol):
 
 ```
-ticker = symbol + ".NS"
-
 try:
 
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=HISTORY_DAYS)
+    start_date = (
+        end_date -
+        timedelta(days=HISTORY_DAYS)
+    )
 
     data = yf.download(
-        ticker,
+        symbol + ".NS",
         start=start_date.strftime("%Y-%m-%d"),
         end=end_date.strftime("%Y-%m-%d"),
         interval="1d",
@@ -318,17 +444,11 @@ except Exception:
     return None
 ```
 
-# ---------------------------------------------------------
-
-# APP
-
-# ---------------------------------------------------------
-
 st.divider()
 
 st.write(
-"Scan the latest available NSE daily candles and find stocks "
-"whose CURRENT setup matches your rules."
+"This scanner checks the latest available daily candles "
+"and returns only CURRENT MATCHES."
 )
 
 if st.button(
@@ -339,28 +459,43 @@ type="primary"
 
 ```
 results = []
+
 progress = st.progress(0)
-status_text = st.empty()
+
+status = st.empty()
 
 total = len(NSE_SYMBOLS)
 
-for count, symbol in enumerate(NSE_SYMBOLS, start=1):
+for number, symbol in enumerate(
+    NSE_SYMBOLS,
+    start=1
+):
 
-    status_text.write(
-        f"Scanning {symbol} — {count}/{total}"
+    status.write(
+        "Scanning "
+        + symbol
+        + " — "
+        + str(number)
+        + "/"
+        + str(total)
     )
 
     data = download_stock(symbol)
 
-    result = scan_current_stock(symbol, data)
+    result = scan_current_stock(
+        symbol,
+        data
+    )
 
     if result is not None:
         results.append(result)
 
-    progress.progress(count / total)
+    progress.progress(
+        number / total
+    )
 
-status_text.empty()
 progress.empty()
+status.empty()
 
 st.divider()
 
@@ -369,7 +504,8 @@ if results:
     result_df = pd.DataFrame(results)
 
     st.success(
-        f"🎯 {len(result_df)} CURRENT MATCHES FOUND"
+        str(len(result_df))
+        + " CURRENT MATCHES FOUND"
     )
 
     st.dataframe(
@@ -389,7 +525,6 @@ else:
 
 ```
 st.info(
-    "Click SCAN CURRENT NSE STOCKS to start the current scan."
+    "Click the button above to scan current NSE stocks."
 )
 ```
-
