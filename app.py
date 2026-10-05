@@ -51,156 +51,182 @@ def scan_stock(symbol):
         if not all(col in data.columns for col in required):
             return None
 
-        data = data.dropna(subset=required).copy()
+        data = data.dropna(
+            subset=required
+        ).copy()
 
         if len(data) < 10:
             return None
 
-        # -------------------------------------------------
-        # ONLY LAST 5 TRADING DAYS CAN BE THE 2ND RED CANDLE
-        # -------------------------------------------------
+        # =================================================
+        # FIND LATEST SWING LOW
+        # =================================================
 
-        recent_start = max(0, len(data) - 5)
+        latest_swing_index = None
 
-        possible_matches = []
+        for i in range(
+            len(data) - 2,
+            0,
+            -1
+        ):
 
-        # Check every swing low in available 60-day data
-        for swing_index in range(1, len(data) - 2):
-
-            swing_low = float(data.iloc[swing_index]["Low"])
+            current_low = float(
+                data.iloc[i]["Low"]
+            )
 
             previous_low = float(
-                data.iloc[swing_index - 1]["Low"]
+                data.iloc[i - 1]["Low"]
             )
 
             next_low = float(
-                data.iloc[swing_index + 1]["Low"]
+                data.iloc[i + 1]["Low"]
             )
 
-            # Swing Low
-            if not (
-                swing_low < previous_low
-                and swing_low < next_low
+            if (
+                current_low < previous_low
+                and
+                current_low < next_low
             ):
-                continue
 
-            swing_date = data.index[swing_index]
+                latest_swing_index = i
+                break
 
-            # +20% target
-            target = swing_low * 1.20
-
-            reached_20 = False
-            target_date = None
-
-            first_red_date = None
-
-            # Start checking after swing low
-            for i in range(swing_index + 1, len(data)):
-
-                candle_open = float(
-                    data.iloc[i]["Open"]
-                )
-
-                candle_high = float(
-                    data.iloc[i]["High"]
-                )
-
-                candle_close = float(
-                    data.iloc[i]["Close"]
-                )
-
-                candle_date = data.index[i]
-
-                # -----------------------------------------
-                # STEP 1: FIND +20% MOVE
-                # -----------------------------------------
-
-                if not reached_20:
-
-                    if candle_high >= target:
-
-                        reached_20 = True
-                        target_date = candle_date
-
-                    continue
-
-                # -----------------------------------------
-                # STEP 2: FIND 2 CONSECUTIVE RED CANDLES
-                # -----------------------------------------
-
-                if candle_close < candle_open:
-
-                    # First red candle
-                    if first_red_date is None:
-
-                        first_red_date = candle_date
-
-                    # Second consecutive red candle
-                    else:
-
-                        second_red_position = i
-
-                        # IMPORTANT:
-                        # 2nd red must be in LAST 5 TRADING DAYS
-                        if second_red_position >= recent_start:
-
-                            possible_matches.append({
-                                "Symbol": symbol,
-                                "Swing Low": round(
-                                    swing_low, 2
-                                ),
-                                "+20% Level": round(
-                                    target, 2
-                                ),
-                                "Swing Low Date":
-                                    swing_date.strftime(
-                                        "%Y-%m-%d"
-                                    ),
-                                "+20% Date":
-                                    target_date.strftime(
-                                        "%Y-%m-%d"
-                                    ),
-                                "1st Red Date":
-                                    first_red_date.strftime(
-                                        "%Y-%m-%d"
-                                    ),
-                                "2nd Red Date":
-                                    candle_date.strftime(
-                                        "%Y-%m-%d"
-                                    ),
-                                "2nd Red Close": round(
-                                    candle_close, 2
-                                )
-                            })
-
-                        # This pair is complete.
-                        # Continue searching for a newer setup.
-                        first_red_date = None
-
-                else:
-
-                    # Consecutive red sequence broken
-                    first_red_date = None
-
-        # -------------------------------------------------
-        # ONLY THE MOST RECENT CURRENT SETUP
-        # -------------------------------------------------
-
-        if not possible_matches:
+        # No swing low
+        if latest_swing_index is None:
             return None
 
-        result = sorted(
-            possible_matches,
-            key=lambda x: x["2nd Red Date"],
-            reverse=True
-        )[0]
+        # =================================================
+        # LATEST SWING LOW DETAILS
+        # =================================================
 
-        return result
+        swing_low = float(
+            data.iloc[latest_swing_index]["Low"]
+        )
+
+        swing_date = data.index[
+            latest_swing_index
+        ]
+
+        target = swing_low * 1.20
+
+        # =================================================
+        # FIND +20% AFTER LATEST SWING LOW
+        # =================================================
+
+        reached_20 = False
+        target_date = None
+
+        first_red_date = None
+
+        for i in range(
+            latest_swing_index + 1,
+            len(data)
+        ):
+
+            candle_open = float(
+                data.iloc[i]["Open"]
+            )
+
+            candle_high = float(
+                data.iloc[i]["High"]
+            )
+
+            candle_close = float(
+                data.iloc[i]["Close"]
+            )
+
+            candle_date = data.index[i]
+
+            # ---------------------------------------------
+            # FIRST: FIND +20%
+            # ---------------------------------------------
+
+            if not reached_20:
+
+                if candle_high >= target:
+
+                    reached_20 = True
+                    target_date = candle_date
+
+                continue
+
+            # ---------------------------------------------
+            # AFTER +20%: FIND 2 CONSECUTIVE RED CANDLES
+            # ---------------------------------------------
+
+            if candle_close < candle_open:
+
+                # First red candle
+                if first_red_date is None:
+
+                    first_red_date = candle_date
+
+                # Second consecutive red candle
+                else:
+
+                    second_red_index = i
+
+                    # -------------------------------------
+                    # 2ND RED MUST BE WITHIN LAST 5
+                    # TRADING DAYS
+                    # -------------------------------------
+
+                    last_five_start = max(
+                        0,
+                        len(data) - 5
+                    )
+
+                    if second_red_index < last_five_start:
+                        return None
+
+                    return {
+                        "Symbol": symbol,
+                        "Swing Low": round(
+                            swing_low, 2
+                        ),
+                        "+20% Level": round(
+                            target, 2
+                        ),
+                        "Swing Low Date":
+                            swing_date.strftime(
+                                "%Y-%m-%d"
+                            ),
+                        "+20% Date":
+                            target_date.strftime(
+                                "%Y-%m-%d"
+                            ),
+                        "1st Red Date":
+                            first_red_date.strftime(
+                                "%Y-%m-%d"
+                            ),
+                        "2nd Red Date":
+                            candle_date.strftime(
+                                "%Y-%m-%d"
+                            ),
+                        "2nd Red Close": round(
+                            candle_close, 2
+                        )
+                    }
+
+            else:
+
+                # Consecutive red sequence broken
+                first_red_date = None
+
+        # =================================================
+        # IF LATEST SWING LOW NEVER REACHED +20%
+        # =================================================
+
+        return None
 
     except Exception:
 
         return None
 
+
+# =========================================================
+# SCAN BUTTON
+# =========================================================
 
 if st.button("SCAN NOW"):
 
@@ -213,7 +239,10 @@ if st.button("SCAN NOW"):
         stock_match = scan_stock(symbol)
 
         if stock_match is not None:
-            all_matches.append(stock_match)
+
+            all_matches.append(
+                stock_match
+            )
 
         progress.progress(
             (number + 1) / len(symbols)
@@ -233,7 +262,9 @@ if st.button("SCAN NOW"):
 
     if all_matches:
 
-        result_df = pd.DataFrame(all_matches)
+        result_df = pd.DataFrame(
+            all_matches
+        )
 
         result_df = result_df.sort_values(
             by="2nd Red Date",
