@@ -5,17 +5,10 @@ st.set_page_config(page_title="NSE Swing Scanner")
 
 st.title("NSE Swing Scanner")
 
-st.write("Testing NSE market data connection...")
+st.write("Testing NSE data...")
 
-data = yf.download(
-"RELIANCE.NS",
-period="10d",
-interval="1d",
-progress=False
-)
+data = yf.download("RELIANCE.NS", period="10d", interval="1d", progress=False)
 
-if data.empty:
-st.error("NSE DATA NOT RECEIVED")
-else:
-st.success("NSE DATA CONNECTION WORKING")
+st.write("Rows received:", len(data))
+
 st.dataframe(data, use_container_width=True)
