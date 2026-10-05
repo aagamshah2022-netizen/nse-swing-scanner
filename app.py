@@ -1,216 +1,395 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+import yfinance as yf
+from datetime import datetime, timedelta
 
 st.set_page_config(
-    page_title="NSE Swing Scanner",
-    page_icon="📈",
-    layout="wide"
+page_title="NSE Swing Scanner",
+page_icon="📈",
+layout="wide"
 )
 
-st.title("NSE Swing Scanner")
-st.caption("Swing Low -> +20% High -> Reject / Match")
+st.title("📈 NSE Swing Scanner")
+st.caption("CURRENT SCAN — Swing Low → +20% High → 2 Red Candles")
 
+# ---------------------------------------------------------
+
+# SETTINGS
+
+# ---------------------------------------------------------
+
+MIN_MOVE = 0.20
+RED_CANDLES_REQUIRED = 2
+HISTORY_DAYS = 400
+
+# ---------------------------------------------------------
+
+# NSE STOCK UNIVERSE
+
+# ---------------------------------------------------------
+
+NSE_SYMBOLS = [
+"20MICRONS", "21STCENMGM", "360ONE", "3IINFOTECH",
+"3MINDIA", "5PAISA", "63MOONS", "AARTIDRUGS",
+"AARTIIND", "AAVAS", "ABB", "ABBOTINDIA",
+"ABCAPITAL", "ABFRL", "ACC", "ACE",
+"ACI", "ADANIENT", "ADANIGREEN", "ADANIPORTS",
+"ADANIPOWER", "ADFFOODS", "ADORWELD", "AIAENG",
+"AJANTAPHARM", "AKUMS", "ALEMBICLTD", "ALKEM",
+"ALKYLAMINE", "ALLCARGO", "AMARAJABAT", "AMBER",
+"AMBUJACEM", "ANANDRATHI", "ANANTRAJ", "ANGELONE",
+"ANUP", "APARINDS", "APLAPOLLO", "APLLTD",
+"APOLLOHOSP", "APOLLOTYRE", "ARVIND", "ASHOKLEY",
+"ASIANPAINT", "ASTERDM", "ASTRAL", "ATGL",
+"ATUL", "AUBANK", "AUROPHARMA", "AVANTIFEED",
+"AXISBANK", "BAJAJ-AUTO", "BAJAJFINSV", "BAJAJHLDNG",
+"BAJFINANCE", "BALKRISIND", "BALRAMCHIN", "BANDHANBNK",
+"BANKBARODA", "BANKINDIA", "BATAINDIA", "BAYERCROP",
+"BEL", "BEML", "BERGEPAINT", "BHARATFORG",
+"BHARTIARTL", "BHEL", "BIOCON", "BIRLACORPN",
+"BLUESTARCO", "BOSCHLTD", "BPCL", "BRIGADE",
+"BRITANNIA", "BSE", "BSOFT", "CANBK",
+"CANFINHOME", "CAPLIPOINT", "CARBORUNIV", "CASTROLIND",
+"CDSL", "CEATLTD", "CENTRALBK", "CENTURYPLY",
+"CESC", "CGPOWER", "CHALET", "CHAMBLFERT",
+"CHEMPLASTS", "CHENNPETRO", "CHOLAFIN", "CIPLA",
+"CLEAN", "COALINDIA", "COCHINSHIP", "COFORGE",
+"COLPAL", "CONCOR", "COROMANDEL", "CREDITACC",
+"CROMPTON", "CUB", "CUMMINSIND", "CYIENT",
+"DABUR", "DALBHARAT", "DATAPATTNS", "DCMSHRIRAM",
+"DEEPAKFERT", "DEEPAKNTR", "DELHIVERY", "DELTACORP",
+"DEVYANI", "DHANI", "DIVISLAB", "DIXON",
+"DLF", "DMART", "DRREDDY", "EASEMYTRIP",
+"ECLERX", "EICHERMOT", "EIDPARRY", "EIHOTEL",
+"ELGIEQUIP", "EMAMILTD", "EMCURE", "ENDURANCE",
+"ENGINERSIN", "EQUITASBNK", "ERIS", "ESCORTS",
+"ETERNAL", "EXIDEIND", "FACT", "FEDERALBNK",
+"FINCABLES", "FINEORG", "FINPIPE", "FIVESTAR",
+"FLUOROCHEM", "FORTIS", "FSL", "GAIL",
+"GESHIP", "GICRE", "GLAND", "GLENMARK",
+"GMRAIRPORT", "GNFC", "GODFRYPHLP", "GODREJAGRO",
+"GODREJCP", "GODREJIND", "GODREJPROP", "GRANULES",
+"GRAPHITE", "GRASIM", "GREAVESCOT", "GREENPANEL",
+"GRINDWELL", "GRINFRA", "GSFC", "GSPL",
+"GUJGASLTD", "HAL", "HAPPSTMNDS", "HAVELLS",
+"HCLTECH", "HDFCAMC", "HDFCBANK", "HDFCLIFE",
+"HEADSUP", "HEG", "HEROMOTOCO", "HFCL",
+"HINDALCO", "HINDCOPPER", "HINDPETRO", "HINDUNILVR",
+"HINDZINC", "HOMEFIRST", "HONASA", "HUDCO",
+"ICICIBANK", "ICICIGI", "ICICIPRULI", "IDBI",
+"IDEA", "IDFCFIRSTB", "IEX", "IGL",
+"IIFL", "INDHOTEL", "INDIACEM", "INDIAMART",
+"INDIANB", "INDIGO", "INDIGOPNTS", "INDUSINDBK",
+"INDUSTOWER", "INFY", "INOXWIND", "INTELLECT",
+"IOB", "IOC", "IPCALAB", "IRB",
+"IRCON", "IRCTC", "IREDA", "IRFC",
+"ITC", "ITI", "J&KBANK", "JBCHEPHARM",
+"JINDALSAW", "JINDALSTEL", "JIOFIN", "JKCEMENT",
+"JKLAKSHMI", "JKPAPER", "JMFINANCIL", "JSL",
+"JSWENERGY", "JSWSTEEL", "JUBLFOOD", "JUSTDIAL",
+"JYOTHYLAB", "KAJARIACER", "KALYANKJIL", "KANSAINER",
+"KARURVYSYA", "KEC", "KEI", "KFINTECH",
+"KIRLOSBROS", "KIRLOSENG", "KNRCON", "KOTAKBANK",
+"KPIGREEN", "KPIL", "KPRMILL", "KRBL",
+"LALPATHLAB", "LATENTVIEW", "LAURUSLABS", "LEMONTREE",
+"LICHSGFIN", "LICI", "LINDEINDIA", "LODHA",
+"LT", "LTIM", "LTTS", "LUPIN",
+"M&M", "M&MFIN", "MAHABANK", "MAHINDCIE",
+"MANAPPURAM", "MANKIND", "MARICO", "MARUTI",
+"MAXHEALTH", "MAZDOCK", "MCX", "MEDANTA",
+"MEDPLUS", "METROBRAND", "MFSL", "MGL",
+"MHRIL", "MINDACORP", "MMTC", "MOIL",
+"MOTHERSON", "MOTILALOFS", "MPHASIS", "MRF",
+"MUTHOOTFIN", "NATCOPHARM", "NATIONALUM", "NAUKRI",
+"NAVINFLUOR", "NBCC", "NCC", "NESTLEIND",
+"NHPC", "NIACL", "NLCINDIA", "NMDC",
+"NSLNISP", "NTPC", "NUVOCO", "NYKAA",
+"OBEROIRLTY", "OFSS", "OIL", "OLECTRA",
+"ONGC", "PAGEIND", "PATANJALI", "PAYTM",
+"PCBL", "PEL", "PERSISTENT", "PETRONET",
+"PFC", "PFIZER", "PGEL", "PHOENIXLTD",
+"PIDILITIND", "PIIND", "PNB", "PNCINFRA",
+"POLICYBZR", "POLYCAB", "POWERGRID", "POWERMECH",
+"PPLPHARMA", "PRAJIND", "PRESTIGE", "PRICOLLTD",
+"PRIVISCL", "PVRINOX", "RADICO", "RAILTEL",
+"RAIN", "RAJESHEXPO", "RALLIS", "RAMCOCEM",
+"RBLBANK", "RECLTD", "REDINGTON", "RELIANCE",
+"RHIM", "RITES", "RKFORGE", "ROUTE",
+"RVNL", "SAIL", "SAMMAANCAP", "SANDUMA",
+"SBFC", "SBICARD", "SBILIFE", "SBIN",
+"SCHAEFFLER", "SCI", "SHREECEM", "SHRIRAMFIN",
+"SIEMENS", "SJVN", "SKFINDIA", "SOLARINDS",
+"SONACOMS", "SONATSOFTW", "SRF", "STARHEALTH",
+"SUMICHEM", "SUNPHARMA", "SUNTV", "SUPREMEIND",
+"SURYAROSNI", "SUZLON", "SWANENERGY", "SWSOLAR",
+"TATACHEM", "TATACOMM", "TATACONSUM", "TATAELXSI",
+"TATAMOTORS", "TATAPOWER", "TATASTEEL", "TCS",
+"TECHM", "TECHNO", "THERMAX", "TIINDIA",
+"TIMKEN", "TITAN", "TORNTPHARM", "TORNTPOWER",
+"TRENT", "TRIDENT", "TRIVENI", "TVSMOTOR",
+"UBL", "UCOBANK", "UFLEX", "UNIONBANK",
+"UNITDSPR", "UPL", "USHAMART", "UTIAMC",
+"VAIBHAVGBL", "VAKRANGEE", "VARROC", "VEDL",
+"VGUARD", "VIJAYA", "VINATIORGA", "VIPIND",
+"VOLTAS", "WELCORP", "WELSPUNLIV", "WESTLIFE",
+"WHIRLPOOL", "WIPRO", "WOCKPHARMA", "YESBANK",
+"ZEEL", "ZENSARTECH", "ZENTEC", "ZYDUSLIFE"
+]
+
+# ---------------------------------------------------------
+
+# RED CANDLE
+
+# ---------------------------------------------------------
 
 def is_red(row):
-    return row["Close"] < row["Open"]
+return row["Close"] < row["Open"]
 
+# ---------------------------------------------------------
 
-def scan_stock(df):
+# SCAN CURRENT SETUP
 
-    required = ["Date", "Open", "High", "Low", "Close"]
+# ---------------------------------------------------------
 
-    missing = [col for col in required if col not in df.columns]
+def scan_current_stock(symbol, df):
 
-    if missing:
-        return {
-            "Result": "ERROR",
-            "Message": "Missing columns: " + ", ".join(missing)
-        }
+```
+if df is None or df.empty:
+    return None
 
-    df = df.copy()
+df = df.copy()
 
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+if isinstance(df.columns, pd.MultiIndex):
+    df.columns = df.columns.get_level_values(0)
 
-    for col in ["Open", "High", "Low", "Close"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+required = ["Open", "High", "Low", "Close"]
 
-    df = df.dropna(
-        subset=["Date", "Open", "High", "Low", "Close"]
+for col in required:
+    if col not in df.columns:
+        return None
+
+df = df[required].copy()
+
+for col in required:
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+df = df.dropna()
+
+if len(df) < 5:
+    return None
+
+df = df.sort_index()
+
+# -----------------------------------------------------
+# We only care about the LATEST setup.
+# Start from the newest candle and work backwards.
+# -----------------------------------------------------
+
+active_setup = False
+swing_index = None
+
+# Find latest valid swing low
+for i in range(len(df) - 2, 0, -1):
+
+    current = df.iloc[i]
+    previous = df.iloc[i - 1]
+    next_candle = df.iloc[i + 1]
+
+    if (
+        current["Low"] < previous["Low"]
+        and current["Low"] < next_candle["Low"]
+    ):
+        swing_index = i
+        break
+
+if swing_index is None:
+    return None
+
+swing_low = float(df.iloc[swing_index]["Low"])
+swing_date = df.index[swing_index]
+target_20 = swing_low * 1.20
+
+red_count = 0
+reached_20 = False
+target_date = None
+
+# -----------------------------------------------------
+# Evaluate candles AFTER swing low
+# -----------------------------------------------------
+
+for i in range(swing_index + 1, len(df)):
+
+    candle = df.iloc[i]
+
+    # -----------------------------------------------
+    # BEFORE +20%
+    # -----------------------------------------------
+
+    if not reached_20:
+
+        # +20% candle itself is NOT red-counted
+        if candle["High"] >= target_20:
+
+            reached_20 = True
+            target_date = df.index[i]
+            red_count = 0
+
+            continue
+
+        if is_red(candle):
+
+            red_count += 1
+
+            if red_count >= RED_CANDLES_REQUIRED:
+
+                return None
+
+        else:
+
+            red_count = 0
+
+        continue
+
+    # -----------------------------------------------
+    # AFTER +20%
+    # -----------------------------------------------
+
+    if reached_20:
+
+        if is_red(candle):
+
+            red_count += 1
+
+            if red_count >= RED_CANDLES_REQUIRED:
+
+                return {
+                    "Symbol": symbol,
+                    "Swing Low": round(swing_low, 2),
+                    "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
+                    "+20% Level": round(target_20, 2),
+                    "+20% Date": target_date.strftime("%Y-%m-%d"),
+                    "1st Red": (
+                        df.index[i - 1].strftime("%Y-%m-%d")
+                        if i >= 1 else ""
+                    ),
+                    "2nd Red": df.index[i].strftime("%Y-%m-%d"),
+                    "Current Close": round(float(candle["Close"]), 2),
+                    "Status": "MATCH"
+                }
+
+        else:
+
+            red_count = 0
+
+return None
+```
+
+# ---------------------------------------------------------
+
+# DOWNLOAD DATA
+
+# ---------------------------------------------------------
+
+def download_stock(symbol):
+
+```
+ticker = symbol + ".NS"
+
+try:
+
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=HISTORY_DAYS)
+
+    data = yf.download(
+        ticker,
+        start=start_date.strftime("%Y-%m-%d"),
+        end=end_date.strftime("%Y-%m-%d"),
+        interval="1d",
+        auto_adjust=False,
+        progress=False,
+        threads=False
     )
 
-    df = df.sort_values("Date").reset_index(drop=True)
+    return data
 
-    if len(df) < 3:
-        return {
-            "Result": "ERROR",
-            "Message": "At least 3 candles are required."
-        }
+except Exception:
 
-    active_setup = False
-    swing_low = None
-    swing_low_date = None
-    target_20 = None
-    target_date = None
-    reached_20 = False
-    red_count = 0
+    return None
+```
 
-    for i in range(1, len(df) - 1):
+# ---------------------------------------------------------
 
-        current = df.iloc[i]
-        previous = df.iloc[i - 1]
-        next_candle = df.iloc[i + 1]
+# APP
 
-        if active_setup:
+# ---------------------------------------------------------
 
-            if not reached_20:
+st.divider()
 
-                if current["High"] >= target_20:
-
-                    reached_20 = True
-                    target_date = current["Date"]
-                    red_count = 0
-
-                    continue
-
-                if is_red(current):
-
-                    red_count += 1
-
-                    if red_count >= 2:
-
-                        return {
-                            "Result": "REJECT",
-                            "Swing Low Date": swing_low_date,
-                            "Swing Low": round(swing_low, 2),
-                            "+20% Target": round(target_20, 2),
-                            "+20% Date": None,
-                            "Match Date": None
-                        }
-
-                else:
-
-                    red_count = 0
-
-                continue
-
-            if reached_20:
-
-                if is_red(current):
-
-                    red_count += 1
-
-                    if red_count >= 2:
-
-                        return {
-                            "Result": "MATCH",
-                            "Swing Low Date": swing_low_date,
-                            "Swing Low": round(swing_low, 2),
-                            "+20% Target": round(target_20, 2),
-                            "+20% Date": target_date,
-                            "Match Date": current["Date"]
-                        }
-
-                else:
-
-                    red_count = 0
-
-                continue
-
-        if not active_setup:
-
-            swing_low_condition = (
-                current["Low"] < previous["Low"]
-                and current["Low"] < next_candle["Low"]
-            )
-
-            if swing_low_condition:
-
-                active_setup = True
-
-                swing_low = current["Low"]
-                swing_low_date = current["Date"]
-                target_20 = swing_low * 1.20
-
-                reached_20 = False
-                target_date = None
-                red_count = 0
-
-    if active_setup:
-
-        return {
-            "Result": "ACTIVE / NO MATCH",
-            "Swing Low Date": swing_low_date,
-            "Swing Low": round(swing_low, 2),
-            "+20% Target": round(target_20, 2),
-            "+20% Date": target_date,
-            "Match Date": None
-        }
-
-    return {
-        "Result": "NO SETUP",
-        "Swing Low Date": None,
-        "Swing Low": None,
-        "+20% Target": None,
-        "+20% Date": None,
-        "Match Date": None
-    }
-
-
-st.subheader("Upload Historical Data")
-
-uploaded_file = st.file_uploader(
-    "Upload CSV",
-    type=["csv"]
+st.write(
+"Scan the latest available NSE daily candles and find stocks "
+"whose CURRENT setup matches your rules."
 )
 
+if st.button(
+"🔍 SCAN CURRENT NSE STOCKS",
+use_container_width=True,
+type="primary"
+):
+
+```
+results = []
+progress = st.progress(0)
+status_text = st.empty()
+
+total = len(NSE_SYMBOLS)
+
+for count, symbol in enumerate(NSE_SYMBOLS, start=1):
+
+    status_text.write(
+        f"Scanning {symbol} — {count}/{total}"
+    )
+
+    data = download_stock(symbol)
+
+    result = scan_current_stock(symbol, data)
+
+    if result is not None:
+        results.append(result)
+
+    progress.progress(count / total)
+
+status_text.empty()
+progress.empty()
+
+st.divider()
+
+if results:
+
+    result_df = pd.DataFrame(results)
+
+    st.success(
+        f"🎯 {len(result_df)} CURRENT MATCHES FOUND"
+    )
+
+    st.dataframe(
+        result_df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+else:
+
+    st.warning(
+        "No CURRENT MATCH found."
+    )
+```
+
+else:
+
+```
 st.info(
-    "CSV columns required: Date, Open, High, Low, Close"
+    "Click SCAN CURRENT NSE STOCKS to start the current scan."
 )
+```
 
-
-if uploaded_file is not None:
-
-    try:
-
-        data = pd.read_csv(uploaded_file)
-
-        st.subheader("Data Preview")
-
-        st.dataframe(
-            data.head(10),
-            use_container_width=True
-        )
-
-        if st.button(
-            "SCAN STOCK",
-            use_container_width=True
-        ):
-
-            result = scan_stock(data)
-
-            st.divider()
-
-            st.subheader("Scanner Result")
-
-            if result["Result"] == "MATCH":
-                st.success("MATCH FOUND")
-
-            elif result["Result"] == "REJECT":
-                st.error("SETUP REJECTED")
-
-            elif result["Result"] == "ACTIVE / NO MATCH":
-                st.warning("SETUP STILL ACTIVE")
-
-            elif result["Result"] == "ERROR":
-                st.error(result["Message"])
-
-            st.dataframe(
-                pd.DataFrame([result]),
-                use_container_width=True
-            )
-
-    except Exception as e:
-
-        st.error(
-            "Error reading CSV: " + str(e)
-        )
