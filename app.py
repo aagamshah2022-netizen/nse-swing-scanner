@@ -7,37 +7,19 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("📈 NSE Swing Scanner")
-st.caption("Swing Low → +20% High → Reject / Match")
-
-st.divider()
+st.title("NSE Swing Scanner")
+st.caption("Swing Low -> +20% High -> Reject / Match")
 
 
 def is_red(row):
     return row["Close"] < row["Open"]
 
 
-def is_green(row):
-    return row["Close"] > row["Open"]
-
-
 def scan_stock(df):
 
-    df = df.copy()
+    required = ["Date", "Open", "High", "Low", "Close"]
 
-    # Required columns
-    required_columns = [
-        "Date",
-        "Open",
-        "High",
-        "Low",
-        "Close"
-    ]
-
-    missing = [
-        col for col in required_columns
-        if col not in df.columns
-    ]
+    missing = [col for col in required if col not in df.columns]
 
     if missing:
         return {
@@ -45,34 +27,18 @@ def scan_stock(df):
             "Message": "Missing columns: " + ", ".join(missing)
         }
 
-    # Date conversion
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        errors="coerce"
-    )
+    df = df.copy()
 
-    # Numeric conversion
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+
     for col in ["Open", "High", "Low", "Close"]:
-        df[col] = pd.to_numeric(
-            df[col],
-            errors="coerce"
-        )
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # Remove invalid rows
     df = df.dropna(
-        subset=[
-            "Date",
-            "Open",
-            "High",
-            "Low",
-            "Close"
-        ]
+        subset=["Date", "Open", "High", "Low", "Close"]
     )
 
-    # Sort oldest → newest
-    df = df.sort_values(
-        "Date"
-    ).reset_index(drop=True)
+    df = df.sort_values("Date").reset_index(drop=True)
 
     if len(df) < 3:
         return {
@@ -80,25 +46,13 @@ def scan_stock(df):
             "Message": "At least 3 candles are required."
         }
 
-    # -----------------------------------------
-    # STATE VARIABLES
-    # -----------------------------------------
-
     active_setup = False
-
     swing_low = None
     swing_low_date = None
-
     target_20 = None
     target_date = None
-
     reached_20 = False
-
     red_count = 0
-
-    # -----------------------------------------
-    # SCAN
-    # -----------------------------------------
 
     for i in range(1, len(df) - 1):
 
@@ -106,36 +60,22 @@ def scan_stock(df):
         previous = df.iloc[i - 1]
         next_candle = df.iloc[i + 1]
 
-        # =====================================
-        # ACTIVE SETUP
-        # =====================================
-
         if active_setup:
-
-            # ---------------------------------
-            # BEFORE +20%
-            # ---------------------------------
 
             if not reached_20:
 
-                # Check +20% FIRST
-                # +20% candle is NOT counted red
                 if current["High"] >= target_20:
 
                     reached_20 = True
-
                     target_date = current["Date"]
-
                     red_count = 0
 
                     continue
 
-                # Red candle
                 if is_red(current):
 
                     red_count += 1
 
-                    # 2 consecutive red BEFORE +20%
                     if red_count >= 2:
 
                         return {
@@ -147,25 +87,18 @@ def scan_stock(df):
                             "Match Date": None
                         }
 
-                # Green candle resets count
                 else:
 
                     red_count = 0
 
                 continue
 
-            # ---------------------------------
-            # AFTER +20%
-            # ---------------------------------
-
             if reached_20:
 
-                # Red candle
                 if is_red(current):
 
                     red_count += 1
 
-                    # 2 consecutive red AFTER +20%
                     if red_count >= 2:
 
                         return {
@@ -177,23 +110,17 @@ def scan_stock(df):
                             "Match Date": current["Date"]
                         }
 
-                # Green candle resets count
                 else:
 
                     red_count = 0
 
                 continue
 
-        # =====================================
-        # FIND NEW SWING LOW
-        # =====================================
-
         if not active_setup:
 
             swing_low_condition = (
                 current["Low"] < previous["Low"]
-                and
-                current["Low"] < next_candle["Low"]
+                and current["Low"] < next_candle["Low"]
             )
 
             if swing_low_condition:
@@ -201,20 +128,12 @@ def scan_stock(df):
                 active_setup = True
 
                 swing_low = current["Low"]
-
                 swing_low_date = current["Date"]
-
                 target_20 = swing_low * 1.20
 
                 reached_20 = False
-
                 target_date = None
-
                 red_count = 0
-
-    # =========================================
-    # END OF DATA
-    # =========================================
 
     if active_setup:
 
@@ -237,10 +156,6 @@ def scan_stock(df):
     }
 
 
-# =============================================
-# USER INTERFACE
-# =============================================
-
 st.subheader("Upload Historical Data")
 
 uploaded_file = st.file_uploader(
@@ -249,19 +164,17 @@ uploaded_file = st.file_uploader(
 )
 
 st.info(
-    "CSV must contain: Date, Open, High, Low, Close"
+    "CSV columns required: Date, Open, High, Low, Close"
 )
 
 
-if uploaded_file:
+if uploaded_file is not None:
 
     try:
 
-        data = pd.read_csv(
-            uploaded_file
-        )
+        data = pd.read_csv(uploaded_file)
 
-        st.write("Data preview")
+        st.subheader("Data Preview")
 
         st.dataframe(
             data.head(10),
@@ -269,7 +182,7 @@ if uploaded_file:
         )
 
         if st.button(
-            "🔍 SCAN STOCK",
+            "SCAN STOCK",
             use_container_width=True
         ):
 
@@ -280,34 +193,24 @@ if uploaded_file:
             st.subheader("Scanner Result")
 
             if result["Result"] == "MATCH":
-
-                st.success("✅ MATCH FOUND")
+                st.success("MATCH FOUND")
 
             elif result["Result"] == "REJECT":
-
-                st.error("❌ SETUP REJECTED")
+                st.error("SETUP REJECTED")
 
             elif result["Result"] == "ACTIVE / NO MATCH":
-
-                st.warning("⏳ SETUP STILL ACTIVE")
+                st.warning("SETUP STILL ACTIVE")
 
             elif result["Result"] == "ERROR":
-
-                st.error(
-                    result["Message"]
-                )
-
-            result_display = pd.DataFrame(
-                [result]
-            )
+                st.error(result["Message"])
 
             st.dataframe(
-                result_display,
+                pd.DataFrame([result]),
                 use_container_width=True
             )
 
     except Exception as e:
 
         st.error(
-            f"Error reading CSV: {e}"
-        )t kiya jayega.")
+            "Error reading CSV: " + str(e)
+        )
