@@ -41,25 +41,37 @@ def scan_stock(symbol):
         )
 
         if data.empty:
-            return None
+            return {
+                "Symbol": symbol,
+                "Status": "NO DATA"
+            }
 
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
 
         required = ["Open", "High", "Low", "Close"]
 
-        if not all(col in data.columns for col in required):
-            return None
+        if not all(
+            col in data.columns
+            for col in required
+        ):
+            return {
+                "Symbol": symbol,
+                "Status": "MISSING DATA"
+            }
 
         data = data.dropna(
             subset=required
         ).copy()
 
         if len(data) < 10:
-            return None
+            return {
+                "Symbol": symbol,
+                "Status": "NOT ENOUGH DATA"
+            }
 
         # =================================================
-        # FIND LATEST SWING LOW
+        # FIND LATEST 3-CANDLE SWING LOW
         # =================================================
 
         latest_swing_index = None
@@ -91,13 +103,12 @@ def scan_stock(symbol):
                 latest_swing_index = i
                 break
 
-        # No swing low
         if latest_swing_index is None:
-            return None
 
-        # =================================================
-        # LATEST SWING LOW DETAILS
-        # =================================================
+            return {
+                "Symbol": symbol,
+                "Status": "NO SWING LOW"
+            }
 
         swing_low = float(
             data.iloc[latest_swing_index]["Low"]
@@ -107,10 +118,42 @@ def scan_stock(symbol):
             latest_swing_index
         ]
 
+        # =================================================
+        # MAX MOVE FROM LATEST SWING LOW
+        # =================================================
+
+        future_data = data.iloc[
+            latest_swing_index + 1:
+        ]
+
+        if future_data.empty:
+
+            return {
+                "Symbol": symbol,
+                "Swing Low": round(
+                    swing_low, 2
+                ),
+                "Swing Low Date":
+                    swing_date.strftime(
+                        "%Y-%m-%d"
+                    ),
+                "Status":
+                    "NO DATA AFTER SWING"
+            }
+
+        max_high = float(
+            future_data["High"].max()
+        )
+
+        max_move_percent = (
+            (max_high - swing_low)
+            / swing_low
+        ) * 100
+
         target = swing_low * 1.20
 
         # =================================================
-        # FIND +20% AFTER LATEST SWING LOW
+        # CHECK +20%
         # =================================================
 
         reached_20 = False
@@ -137,10 +180,6 @@ def scan_stock(symbol):
 
             candle_date = data.index[i]
 
-            # ---------------------------------------------
-            # FIRST: FIND +20%
-            # ---------------------------------------------
-
             if not reached_20:
 
                 if candle_high >= target:
@@ -150,105 +189,165 @@ def scan_stock(symbol):
 
                 continue
 
-            # ---------------------------------------------
-            # AFTER +20%: FIND 2 CONSECUTIVE RED CANDLES
-            # ---------------------------------------------
+            # =================================================
+            # AFTER +20% CHECK RED CANDLES
+            # =================================================
 
             if candle_close < candle_open:
 
-                # First red candle
                 if first_red_date is None:
 
                     first_red_date = candle_date
 
-                # Second consecutive red candle
                 else:
 
                     second_red_index = i
-
-                    # -------------------------------------
-                    # 2ND RED MUST BE WITHIN LAST 5
-                    # TRADING DAYS
-                    # -------------------------------------
 
                     last_five_start = max(
                         0,
                         len(data) - 5
                     )
 
-                    if second_red_index < last_five_start:
-                        return None
+                    days_old = (
+                        len(data) - 1
+                    ) - second_red_index
 
-                    return {
-                        "Symbol": symbol,
-                        "Swing Low": round(
-                            swing_low, 2
-                        ),
-                        "+20% Level": round(
-                            target, 2
-                        ),
-                        "Swing Low Date":
-                            swing_date.strftime(
-                                "%Y-%m-%d"
-                            ),
-                        "+20% Date":
-                            target_date.strftime(
-                                "%Y-%m-%d"
-                            ),
-                        "1st Red Date":
-                            first_red_date.strftime(
-                                "%Y-%m-%d"
-                            ),
-                        "2nd Red Date":
-                            candle_date.strftime(
-                                "%Y-%m-%d"
-                            ),
-                        "2nd Red Close": round(
-                            candle_close, 2
-                        )
-                    }
+                    if days_old <= 4:
+
+                        return {
+                            "Symbol": symbol,
+                            "Swing Low":
+                                round(
+                                    swing_low,
+                                    2
+                                ),
+                            "Swing Low Date":
+                                swing_date.strftime(
+                                    "%Y-%m-%d"
+                                ),
+                            "Max Move %":
+                                round(
+                                    max_move_percent,
+                                    2
+                                ),
+                            "+20% Level":
+                                round(
+                                    target,
+                                    2
+                                ),
+                            "+20% Date":
+                                target_date.strftime(
+                                    "%Y-%m-%d"
+                                ),
+                            "1st Red Date":
+                                first_red_date.strftime(
+                                    "%Y-%m-%d"
+                                ),
+                            "2nd Red Date":
+                                candle_date.strftime(
+                                    "%Y-%m-%d"
+                                ),
+                            "Status":
+                                "MATCH"
+                        }
+
+                    first_red_date = None
 
             else:
 
-                # Consecutive red sequence broken
                 first_red_date = None
 
         # =================================================
-        # IF LATEST SWING LOW NEVER REACHED +20%
+        # DIAGNOSTIC STATUS
         # =================================================
 
-        return None
+        if max_move_percent < 20:
 
-    except Exception:
+            return {
+                "Symbol": symbol,
+                "Swing Low":
+                    round(
+                        swing_low,
+                        2
+                    ),
+                "Swing Low Date":
+                    swing_date.strftime(
+                        "%Y-%m-%d"
+                    ),
+                "Max Move %":
+                    round(
+                        max_move_percent,
+                        2
+                    ),
+                "+20% Level":
+                    round(
+                        target,
+                        2
+                    ),
+                "Status":
+                    "NO +20%"
+            }
 
-        return None
+        return {
+            "Symbol": symbol,
+            "Swing Low":
+                round(
+                    swing_low,
+                    2
+                ),
+            "Swing Low Date":
+                swing_date.strftime(
+                    "%Y-%m-%d"
+                ),
+            "Max Move %":
+                round(
+                    max_move_percent,
+                    2
+                ),
+            "+20% Level":
+                round(
+                    target,
+                    2
+                ),
+            "Status":
+                "NO 2 RED CANDLES"
+        }
 
+    except Exception as e:
 
-# =========================================================
-# SCAN BUTTON
-# =========================================================
+        return {
+            "Symbol": symbol,
+            "Status": "ERROR"
+        }
+
 
 if st.button("SCAN NOW"):
 
-    all_matches = []
+    results = []
 
     progress = st.progress(0)
 
     for number, symbol in enumerate(symbols):
 
-        stock_match = scan_stock(symbol)
+        result = scan_stock(symbol)
 
-        if stock_match is not None:
-
-            all_matches.append(
-                stock_match
-            )
+        results.append(result)
 
         progress.progress(
             (number + 1) / len(symbols)
         )
 
     st.success("SCAN COMPLETE")
+
+    result_df = pd.DataFrame(results)
+
+    matches = result_df[
+        result_df["Status"] == "MATCH"
+    ].copy()
+
+    diagnostics = result_df[
+        result_df["Status"] != "MATCH"
+    ].copy()
 
     st.write(
         "Total Stocks:",
@@ -257,22 +356,22 @@ if st.button("SCAN NOW"):
 
     st.write(
         "Current Matches:",
-        len(all_matches)
+        len(matches)
     )
 
-    if all_matches:
+    if not matches.empty:
 
-        result_df = pd.DataFrame(
-            all_matches
+        st.subheader(
+            "CURRENT MATCHES"
         )
 
-        result_df = result_df.sort_values(
+        matches = matches.sort_values(
             by="2nd Red Date",
             ascending=False
         )
 
         st.dataframe(
-            result_df,
+            matches,
             use_container_width=True
         )
 
@@ -281,3 +380,12 @@ if st.button("SCAN NOW"):
         st.warning(
             "0 CURRENT MATCHES"
         )
+
+    st.subheader(
+        "DIAGNOSTIC"
+    )
+
+    st.dataframe(
+        diagnostics,
+        use_container_width=True
+    )
