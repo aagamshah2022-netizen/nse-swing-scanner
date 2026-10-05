@@ -278,7 +278,6 @@ def is_red(row):
 
 def scan_current_stock(symbol, data):
 
-```
 if data is None or data.empty:
     return None
 
@@ -414,11 +413,9 @@ for i in range(
         first_red_date = None
 
 return None
-```
 
 def download_stock(symbol):
 
-```
 try:
 
     end_date = datetime.now()
@@ -442,7 +439,6 @@ try:
 except Exception:
 
     return None
-```
 
 st.divider()
 
@@ -457,7 +453,6 @@ use_container_width=True,
 type="primary"
 ):
 
-```
 results = []
 
 progress = st.progress(0)
@@ -519,12 +514,9 @@ else:
     st.warning(
         "No CURRENT MATCH found."
     )
-```
 
 else:
 
-```
 st.info(
     "Click the button above to scan current NSE stocks."
 )
-```
