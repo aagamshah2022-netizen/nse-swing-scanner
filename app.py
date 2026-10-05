@@ -99,10 +99,6 @@ try:
 
     data_ok += 1
 
-    # --------------------------------------------------
-    # FIND LATEST CONFIRMED SWING LOW
-    # --------------------------------------------------
-
     swing = None
 
     for i in range(len(d) - 2, 0, -1):
@@ -140,10 +136,6 @@ try:
     first_red_date = None
     target_date = None
 
-    # --------------------------------------------------
-    # CHECK +20% AND RED CANDLES
-    # --------------------------------------------------
-
     for i in range(swing + 1, len(d)):
 
         o = float(d.iloc[i]["Open"])
@@ -151,7 +143,6 @@ try:
         c = float(d.iloc[i]["Close"])
         dt = d.index[i]
 
-        # Before +20%
         if not reached:
 
             if h >= target:
@@ -162,7 +153,6 @@ try:
 
             continue
 
-        # After +20% - count consecutive red candles
         if c < o:
 
             if reds == 0:
@@ -201,6 +191,7 @@ try:
                 break
 
         else:
+
             reds = 0
             first_red_date = None
 
@@ -226,7 +217,7 @@ try:
                 len(d),
                 swing_date.strftime("%Y-%m-%d"),
                 round(swing_low, 2),
-                target_date.strftime("%Y-%m-%d"),
+                round(target, 2),
                 ""
             ])
 
@@ -238,7 +229,7 @@ try:
                 len(d),
                 swing_date.strftime("%Y-%m-%d"),
                 round(swing_low, 2),
-                target_date.strftime("%Y-%m-%d"),
+                round(target, 2),
                 ""
             ])
 
@@ -257,12 +248,6 @@ except Exception as e:
     ])
 ```
 
-# ==========================================================
-
-# DEBUG SUMMARY
-
-# ==========================================================
-
 st.subheader("DEBUG SUMMARY")
 
 col1, col2, col3 = st.columns(3)
@@ -280,12 +265,6 @@ st.metric("2 Red Candles", two_red_found)
 with col3:
 st.metric("Errors", errors)
 st.metric("FINAL MATCHES", len(results))
-
-# ==========================================================
-
-# FINAL MATCHES
-
-# ==========================================================
 
 st.subheader("CURRENT MATCHES")
 
@@ -318,12 +297,6 @@ else:
 st.warning("0 CURRENT MATCHES")
 ```
 
-# ==========================================================
-
-# DETAILED DEBUG TABLE
-
-# ==========================================================
-
 st.subheader("DETAILED DEBUG")
 
 debug_df = pd.DataFrame(
@@ -343,12 +316,6 @@ st.dataframe(
 debug_df,
 use_container_width=True
 )
-
-# ==========================================================
-
-# STATUS BREAKDOWN
-
-# ==========================================================
 
 st.subheader("STATUS BREAKDOWN")
 
