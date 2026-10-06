@@ -14,23 +14,23 @@ st.set_page_config(
 
 st.title("NSE Swing Scanner")
 st.caption(
-    "Full NSE • NIFTY 500 • IPO | Swing Low → +20% → 2 Consecutive Red Candles"
+    "Full NSE • NIFTY 500 • IPO | Swing Low → +20% → 2 Red Candles"
 )
-
-# ============================================================
-# SETTINGS
-# ============================================================
 
 YF_PERIOD = "60d"
 YF_INTERVAL = "1d"
-
 SWING_LOOKBACK = 30
 BATCH_SIZE = 80
 RECENT_CANDLES = 5
 
-NSE_LIST_URL = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+NSE_LIST_URL = (
+    "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
+)
 
-NIFTY500_CSV_URL = "https://www.nseindia.com/content/indices/ind_nifty500list.csv"
+NIFTY500_URL = (
+    "https://nsearchives.nseindia.com/content/indices/"
+    "ind_nifty500list.csv"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -44,10 +44,6 @@ HEADERS = {
 }
 
 
-# ============================================================
-# CLEAN SYMBOL
-# ============================================================
-
 def clean_symbol(symbol):
     symbol = str(symbol).strip().upper()
 
@@ -59,10 +55,6 @@ def clean_symbol(symbol):
     return symbol
 
 
-# ============================================================
-# NORMALIZE DATA
-# ============================================================
-
 def normalize_dataframe(data, symbol=None):
 
     try:
@@ -72,35 +64,35 @@ def normalize_dataframe(data, symbol=None):
 
         if isinstance(data.columns, pd.MultiIndex):
 
-            if symbol:
+            if symbol is not None:
 
                 symbol = clean_symbol(symbol)
                 ticker = symbol + ".NS"
 
-                level_zero = [
+                level0 = [
                     str(x).upper()
                     for x in data.columns.get_level_values(0)
                 ]
 
-                level_one = [
+                level1 = [
                     str(x).upper()
                     for x in data.columns.get_level_values(1)
                 ]
 
-                if ticker.upper() in level_zero:
+                if ticker.upper() in level0:
                     data = data[ticker].copy()
 
-                elif symbol.upper() in level_zero:
+                elif symbol.upper() in level0:
                     data = data[symbol].copy()
 
-                elif ticker.upper() in level_one:
+                elif ticker.upper() in level1:
                     data = data.xs(
                         ticker,
                         axis=1,
                         level=1
                     ).copy()
 
-                elif symbol.upper() in level_one:
+                elif symbol.upper() in level1:
                     data = data.xs(
                         symbol,
                         axis=1,
@@ -108,10 +100,14 @@ def normalize_dataframe(data, symbol=None):
                     ).copy()
 
                 else:
-                    data.columns = data.columns.get_level_values(0)
+                    data.columns = (
+                        data.columns.get_level_values(0)
+                    )
 
             else:
-                data.columns = data.columns.get_level_values(0)
+                data.columns = (
+                    data.columns.get_level_values(0)
+                )
 
         required = [
             "Open",
@@ -121,8 +117,8 @@ def normalize_dataframe(data, symbol=None):
         ]
 
         if not all(
-            c in data.columns
-            for c in required
+            column in data.columns
+            for column in required
         ):
             return pd.DataFrame()
 
@@ -135,12 +131,9 @@ def normalize_dataframe(data, symbol=None):
         return data
 
     except Exception:
+
         return pd.DataFrame()
 
-
-# ============================================================
-# FULL NSE SYMBOLS
-# ============================================================
 
 @st.cache_data(ttl=3600)
 def get_nse_symbols():
@@ -162,41 +155,33 @@ def get_nse_symbols():
         if "SYMBOL" not in df.columns:
             return []
 
-        symbols = (
-            df["SYMBOL"]
-            .astype(str)
-            .str.strip()
-            .tolist()
-        )
+        symbols = []
 
-        symbols = [
-            clean_symbol(s)
-            for s in symbols
-            if s
-            and str(s).upper() != "NAN"
-        ]
+        for value in df["SYMBOL"]:
 
-        symbols = list(
+            symbol = clean_symbol(value)
+
+            if symbol and symbol != "NAN":
+                symbols.append(symbol)
+
+        return list(
             dict.fromkeys(symbols)
         )
 
-        return symbols
-
     except Exception:
+
         return []
 
 
-# ============================================================
-# NIFTY 500 SYMBOLS
-# ============================================================
-
-@st.cache_data(ttl=3600)
 @st.cache_data(ttl=3600)
 def get_nifty500_symbols():
 
     urls = [
-        "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
-        "https://www.nseindia.com/content/indices/ind_nifty500list.csv"
+        NIFTY500_URL,
+        (
+            "https://www.nseindia.com/content/indices/"
+            "ind_nifty500list.csv"
+        )
     ]
 
     for url in urls:
@@ -205,15 +190,9 @@ def get_nifty500_symbols():
 
             session = requests.Session()
 
-            session.headers.update({
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/154.0.0.0 Safari/537.36"
-                ),
-                "Accept": "text/csv,*/*",
-                "Referer": "https://www.nseindia.com/"
-            })
+            session.headers.update(
+                HEADERS
+            )
 
             session.get(
                 "https://www.nseindia.com/",
@@ -228,18 +207,16 @@ def get_nifty500_symbols():
             if response.status_code != 200:
                 continue
 
-            content = response.content
-
-            if not content:
+            if not response.content:
                 continue
 
             df = pd.read_csv(
-                io.BytesIO(content)
+                io.BytesIO(response.content)
             )
 
             df.columns = [
-                str(c).strip().upper()
-                for c in df.columns
+                str(column).strip().upper()
+                for column in df.columns
             ]
 
             if "SYMBOL" not in df.columns:
@@ -262,46 +239,14 @@ def get_nifty500_symbols():
                 return symbols
 
         except Exception:
+
             continue
 
     return []
-        symbols = (
-            df[symbol_column]
-            .astype(str)
-            .str.strip()
-            .tolist()
-        )
 
-        symbols = [
-            clean_symbol(s)
-            for s in symbols
-            if s
-            and str(s).upper() != "NAN"
-        ]
-
-        symbols = list(
-            dict.fromkeys(symbols)
-        )
-
-        if len(symbols) >= 450:
-            return symbols
-
-    except Exception:
-        pass
-
-    return []
-
-
-# ============================================================
-# IPO SYMBOLS
-# ============================================================
 
 @st.cache_data(ttl=3600)
 def get_ipo_symbols():
-
-    # Current NSE equity universe.
-    # Newly listed IPO stocks automatically
-    # enter this universe after listing.
 
     try:
 
@@ -320,33 +265,23 @@ def get_ipo_symbols():
         if "SYMBOL" not in df.columns:
             return []
 
-        symbols = (
-            df["SYMBOL"]
-            .astype(str)
-            .str.strip()
-            .tolist()
-        )
+        symbols = []
 
-        symbols = [
-            clean_symbol(s)
-            for s in symbols
-            if s
-            and str(s).upper() != "NAN"
-        ]
+        for value in df["SYMBOL"]:
 
-        symbols = list(
+            symbol = clean_symbol(value)
+
+            if symbol and symbol != "NAN":
+                symbols.append(symbol)
+
+        return list(
             dict.fromkeys(symbols)
         )
 
-        return symbols
-
     except Exception:
+
         return []
 
-
-# ============================================================
-# FIND MAJOR SWING LOW
-# ============================================================
 
 def find_swing_low(data):
 
@@ -377,7 +312,6 @@ def find_swing_low(data):
             data.iloc[i + 1]["Low"]
         )
 
-        # Proper 3 candle swing low
         if not (
             swing_low < previous_low
             and swing_low < next_low
@@ -393,11 +327,11 @@ def find_swing_low(data):
             len(data)
         ):
 
-            future_high = float(
+            high_price = float(
                 data.iloc[j]["High"]
             )
 
-            if future_high >= target:
+            if high_price >= target:
 
                 target_index = j
                 break
@@ -405,8 +339,7 @@ def find_swing_low(data):
         if target_index is None:
             continue
 
-        # Swing low cannot be broken before +20%
-        lower_low_after = False
+        broken = False
 
         for k in range(
             i + 1,
@@ -419,36 +352,29 @@ def find_swing_low(data):
 
             if later_low < swing_low:
 
-                lower_low_after = True
+                broken = True
                 break
 
-        if lower_low_after:
+        if broken:
             continue
 
         candidates.append(
             {
                 "index": i,
-                "target_index": target_index,
-                "low": swing_low
+                "target_index": target_index
             }
         )
 
     if not candidates:
         return None
 
-    # Prefer the latest valid major swing
-    candidates = sorted(
-        candidates,
+    candidates.sort(
         key=lambda x: x["index"],
         reverse=True
     )
 
     return candidates[0]["index"]
 
-
-# ============================================================
-# CHECK SETUP
-# ============================================================
 
 def check_setup(data, swing_index):
 
@@ -464,10 +390,6 @@ def check_setup(data, swing_index):
 
     target_index = None
     first_red_index = None
-
-    # ========================================================
-    # BEFORE +20%
-    # ========================================================
 
     for i in range(
         swing_index + 1,
@@ -490,20 +412,16 @@ def check_setup(data, swing_index):
             close_price < open_price
         )
 
-        # +20% not reached yet
         if target_index is None:
 
-            # +20% reached
             if high_price >= target:
 
                 target_index = i
 
-                # +20% candle is NOT counted
                 first_red_index = None
 
                 continue
 
-            # Red before +20%
             if is_red:
 
                 if first_red_index is None:
@@ -512,8 +430,6 @@ def check_setup(data, swing_index):
 
                 else:
 
-                    # 2 consecutive red before +20%
-                    # = REJECT
                     return None
 
             else:
@@ -522,83 +438,70 @@ def check_setup(data, swing_index):
 
             continue
 
-        # ====================================================
-        # AFTER +20%
-        # ====================================================
-
         if is_red:
 
             if first_red_index is None:
 
                 first_red_index = i
 
-                continue
+            else:
 
-            second_red_index = i
+                second_red_index = i
 
-            recent_start = max(
-                0,
-                len(data) - RECENT_CANDLES
-            )
-
-            # Old red pair = expired
-            if second_red_index < recent_start:
-                return None
-
-            return {
-                "Symbol": "",
-                "Swing Low": round(
-                    swing_low,
-                    2
-                ),
-                "Swing Low Date":
-                    swing_date.strftime(
-                        "%Y-%m-%d"
-                    ),
-                "+20% Level": round(
-                    target,
-                    2
-                ),
-                "+20% Date":
-                    data.index[
-                        target_index
-                    ].strftime(
-                        "%Y-%m-%d"
-                    ),
-                "1st Red Date":
-                    data.index[
-                        first_red_index
-                    ].strftime(
-                        "%Y-%m-%d"
-                    ),
-                "2nd Red Date":
-                    data.index[
-                        second_red_index
-                    ].strftime(
-                        "%Y-%m-%d"
-                    ),
-                "2nd Red Close": round(
-                    close_price,
-                    2
+                recent_start = max(
+                    0,
+                    len(data) - RECENT_CANDLES
                 )
-            }
+
+                if second_red_index < recent_start:
+                    return None
+
+                return {
+                    "Symbol": "",
+                    "Swing Low": round(
+                        swing_low,
+                        2
+                    ),
+                    "Swing Low Date":
+                        swing_date.strftime(
+                            "%Y-%m-%d"
+                        ),
+                    "+20% Level": round(
+                        target,
+                        2
+                    ),
+                    "+20% Date":
+                        data.index[
+                            target_index
+                        ].strftime(
+                            "%Y-%m-%d"
+                        ),
+                    "1st Red Date":
+                        data.index[
+                            first_red_index
+                        ].strftime(
+                            "%Y-%m-%d"
+                        ),
+                    "2nd Red Date":
+                        data.index[
+                            second_red_index
+                        ].strftime(
+                            "%Y-%m-%d"
+                        ),
+                    "2nd Red Close": round(
+                        close_price,
+                        2
+                    )
+                }
 
         else:
 
-            # Green resets red count
             first_red_index = None
 
     return None
 
 
-# ============================================================
-# PROCESS STOCK
-# ============================================================
-
-def process_stock(
-    symbol,
-    data
-):
+def process_stock(symbol, data):
 
     try:
 
@@ -633,12 +536,9 @@ def process_stock(
         return result
 
     except Exception:
+
         return None
 
-
-# ============================================================
-# DOWNLOAD BATCH
-# ============================================================
 
 def download_batch(symbols):
 
@@ -649,7 +549,7 @@ def download_batch(symbols):
 
     try:
 
-        data = yf.download(
+        return yf.download(
             tickers=tickers,
             period=YF_PERIOD,
             interval=YF_INTERVAL,
@@ -659,15 +559,10 @@ def download_batch(symbols):
             group_by="ticker"
         )
 
-        return data
-
     except Exception:
+
         return pd.DataFrame()
 
-
-# ============================================================
-# GET STOCK DATA
-# ============================================================
 
 def get_stock_from_batch(
     batch_data,
@@ -692,51 +587,44 @@ def get_stock_from_batch(
             pd.MultiIndex
         ):
 
-            level_zero = [
+            level0 = [
                 str(x).upper()
                 for x in batch_data.columns.get_level_values(0)
             ]
 
-            level_one = [
+            level1 = [
                 str(x).upper()
                 for x in batch_data.columns.get_level_values(1)
             ]
 
-            if ticker.upper() in level_zero:
+            if ticker.upper() in level0:
                 return batch_data[ticker].copy()
 
-            if clean_symbol(symbol).upper() in level_zero:
+            if clean_symbol(symbol).upper() in level0:
                 return batch_data[
                     clean_symbol(symbol)
                 ].copy()
 
-            if ticker.upper() in level_one:
+            if ticker.upper() in level1:
                 return batch_data.xs(
                     ticker,
                     axis=1,
                     level=1
                 ).copy()
 
-            if clean_symbol(symbol).upper() in level_one:
+            if clean_symbol(symbol).upper() in level1:
                 return batch_data.xs(
                     clean_symbol(symbol),
                     axis=1,
                     level=1
                 ).copy()
 
-        else:
-
-            return batch_data.copy()
-
-        return None
+        return batch_data.copy()
 
     except Exception:
+
         return None
 
-
-# ============================================================
-# RUN SCANNER
-# ============================================================
 
 def run_scanner(
     symbols,
@@ -752,10 +640,6 @@ def run_scanner(
     total = len(symbols)
 
     if total == 0:
-
-        status.empty()
-        progress.empty()
-
         return []
 
     batches = [
@@ -767,9 +651,7 @@ def run_scanner(
         )
     ]
 
-    total_batches = len(
-        batches
-    )
+    total_batches = len(batches)
 
     for batch_number, batch in enumerate(
         batches
@@ -777,10 +659,8 @@ def run_scanner(
 
         status.write(
             f"{scanner_name}: "
-            f"Downloading batch "
-            f"{batch_number + 1}/"
-            f"{total_batches} "
-            f"({len(batch)} stocks)"
+            f"Batch {batch_number + 1}/"
+            f"{total_batches}"
         )
 
         batch_data = download_batch(
@@ -789,9 +669,11 @@ def run_scanner(
 
         for symbol in batch:
 
-            stock_data = get_stock_from_batch(
-                batch_data,
-                symbol
+            stock_data = (
+                get_stock_from_batch(
+                    batch_data,
+                    symbol
+                )
             )
 
             result = process_stock(
@@ -800,10 +682,7 @@ def run_scanner(
             )
 
             if result is not None:
-
-                results.append(
-                    result
-                )
+                results.append(result)
 
         progress.progress(
             (batch_number + 1)
@@ -817,10 +696,6 @@ def run_scanner(
 
     return results
 
-
-# ============================================================
-# DISPLAY RESULTS
-# ============================================================
 
 def display_results(
     results,
@@ -879,22 +754,14 @@ def display_results(
     )
 
 
-# ============================================================
-# TABS
-# ============================================================
-
 tab1, tab2, tab3 = st.tabs(
     [
-        "🇮🇳 FULL NSE",
-        "📊 NIFTY 500",
-        "🚀 IPO"
+        "FULL NSE",
+        "NIFTY 500",
+        "IPO"
     ]
 )
 
-
-# ============================================================
-# FULL NSE
-# ============================================================
 
 with tab1:
 
@@ -909,7 +776,7 @@ with tab1:
     ):
 
         st.write(
-            "Loading complete NSE equity list..."
+            "Loading NSE stock list..."
         )
 
         symbols = get_nse_symbols()
@@ -923,7 +790,7 @@ with tab1:
         else:
 
             st.info(
-                f"Total NSE stocks found: {len(symbols)}"
+                f"Total NSE Stocks: {len(symbols)}"
             )
 
             results = run_scanner(
@@ -938,18 +805,10 @@ with tab1:
             )
 
 
-# ============================================================
-# NIFTY 500
-# ============================================================
-
 with tab2:
 
     st.subheader(
         "NIFTY 500 Scanner"
-    )
-
-    st.write(
-        "Current NIFTY 500 list automatically NSE se load hogi."
     )
 
     if st.button(
@@ -973,7 +832,7 @@ with tab2:
         else:
 
             st.info(
-                f"NIFTY 500 stocks found: {len(symbols)}"
+                f"NIFTY 500 Stocks: {len(symbols)}"
             )
 
             results = run_scanner(
@@ -988,10 +847,6 @@ with tab2:
             )
 
 
-# ============================================================
-# IPO
-# ============================================================
-
 with tab3:
 
     st.subheader(
@@ -999,12 +854,7 @@ with tab3:
     )
 
     st.write(
-        "Listed IPO stocks scanner"
-    )
-
-    st.caption(
-        "Naya IPO NSE par list hone ke baad "
-        "automatically universe mein aa jayega."
+        "NSE listed IPO stocks scanner"
     )
 
     if st.button(
