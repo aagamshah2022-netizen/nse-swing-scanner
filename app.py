@@ -4,11 +4,8 @@ import pandas as pd
 import requests
 import io
 import time
+import os
 
-
-# =====================================================
-# PAGE SETTINGS
-# =====================================================
 
 st.set_page_config(
     page_title="NSE Swing Scanner",
@@ -17,15 +14,14 @@ st.set_page_config(
 )
 
 st.title("NSE Swing Scanner")
-
 st.caption(
-    "Major Swing Low → +20% → 2 Consecutive Red Candles → Current Setup"
+    "FULL NSE • NIFTY 500 • IPO | Major Swing Low → +20% → 2 Consecutive Red Candles"
 )
 
 
-# =====================================================
+# =========================================================
 # SETTINGS
-# =====================================================
+# =========================================================
 
 NSE_LIST_URL = (
     "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
@@ -35,18 +31,18 @@ YF_PERIOD = "60d"
 YF_INTERVAL = "1d"
 
 SWING_LOOKBACK = 30
-
 BATCH_SIZE = 80
-
 RECENT_CANDLES = 5
 
+IPO_START_DATE = pd.Timestamp("2025-01-01")
 
-# =====================================================
-# NSE SYMBOL LIST
-# =====================================================
+
+# =========================================================
+# NSE EQUITY LIST
+# =========================================================
 
 @st.cache_data(ttl=3600)
-def get_nse_symbols():
+def get_nse_equity_list():
 
     headers = {
         "User-Agent": (
@@ -72,6 +68,200 @@ def get_nse_symbols():
             io.BytesIO(response.content)
         )
 
+        df.columns = [
+            str(c).strip().upper()
+            for c in df.columns
+        ]
+
+        return df
+
+    except Exception:
+
+        return pd.DataFrame()
+
+
+# =========================================================
+# FULL NSE SYMBOLS
+# =========================================================
+
+@st.cache_data(ttl=3600)
+def get_nse_symbols():
+
+    df = get_nse_equity_list()
+
+    if df.empty or "SYMBOL" not in df.columns:
+        return []
+
+    symbols = (
+        df["SYMBOL"]
+        .astype(str)
+        .str.strip()
+        .tolist()
+    )
+
+    symbols = [
+        s for s in symbols
+        if s
+        and s.upper() != "NAN"
+        and " " not in s
+    ]
+
+    return list(dict.fromkeys(symbols))
+
+
+# =========================================================
+# IPO SYMBOLS
+# 01-01-2025 ONWARDS
+# =========================================================
+
+@st.cache_data(ttl=3600)
+def get_ipo_list():
+
+    df = get_nse_equity_list()
+
+    if df.empty:
+        return pd.DataFrame()
+
+    if "SYMBOL" not in df.columns:
+        return pd.DataFrame()
+
+    listing_col = None
+
+    possible_columns = [
+        "DATE OF LISTING",
+        "DATE_OF_LISTING",
+        "LISTING DATE",
+        "LISTING_DATE"
+    ]
+
+    for col in possible_columns:
+
+        if col in df.columns:
+            listing_col = col
+            break
+
+    if listing_col is None:
+        return pd.DataFrame()
+
+    df = df.copy()
+
+    df["LISTING_DATE"] = pd.to_datetime(
+        df[listing_col],
+        errors="coerce",
+        dayfirst=True
+    )
+
+    df = df[
+        df["LISTING_DATE"] >= IPO_START_DATE
+    ].copy()
+
+    df = df[
+        df["LISTING_DATE"].notna()
+    ].copy()
+
+    df["SYMBOL"] = (
+        df["SYMBOL"]
+        .astype(str)
+        .str.strip()
+    )
+
+    df = df[
+        df["SYMBOL"].ne("")
+        & df["SYMBOL"].str.upper().ne("NAN")
+        & ~df["SYMBOL"].str.contains(" ", na=False)
+    ]
+
+    company_col = None
+
+    possible_company_columns = [
+        "NAME OF COMPANY",
+        "COMPANY NAME",
+        "NAME_OF_COMPANY"
+    ]
+
+    for col in possible_company_columns:
+
+        if col in df.columns:
+            company_col = col
+            break
+
+    if company_col:
+
+        result = df[
+            ["SYMBOL", "LISTING_DATE", company_col]
+        ].copy()
+
+        result.columns = [
+            "SYMBOL",
+            "LISTING_DATE",
+            "COMPANY NAME"
+        ]
+
+    else:
+
+        result = df[
+            ["SYMBOL", "LISTING_DATE"]
+        ].copy()
+
+        result["COMPANY NAME"] = ""
+
+        result = result[
+            [
+                "SYMBOL",
+                "COMPANY NAME",
+                "LISTING_DATE"
+            ]
+        ]
+
+    result = result.drop_duplicates(
+        subset=["SYMBOL"]
+    )
+
+    result = result.sort_values(
+        "LISTING_DATE",
+        ascending=False
+    )
+
+    return result.reset_index(drop=True)
+
+
+# =========================================================
+# NIFTY 500 MASTER
+# =========================================================
+
+@st.cache_data(ttl=3600)
+def get_nifty500_symbols():
+
+    possible_files = [
+        "NIFTY500_MASTER.xlsx",
+        "NIFTY500/NIFTY500_MASTER.xlsx",
+        "NIFTY500/MASTER/NIFTY500_MASTER.xlsx",
+        "NIFTY 500/NIFTY500_MASTER.xlsx",
+        "NIFTY 500/MASTER/NIFTY500_MASTER.xlsx"
+    ]
+
+    master_file = None
+
+    for file_path in possible_files:
+
+        if os.path.exists(file_path):
+            master_file = file_path
+            break
+
+    if master_file is None:
+        return []
+
+    try:
+
+        df = pd.read_excel(
+            master_file
+        )
+
+        df.columns = [
+            str(c).strip().upper()
+            for c in df.columns
+        ]
+
         if "SYMBOL" not in df.columns:
             return []
 
@@ -83,27 +273,22 @@ def get_nse_symbols():
         )
 
         symbols = [
-            s
-            for s in symbols
+            s for s in symbols
             if s
             and s.upper() != "NAN"
             and " " not in s
         ]
 
-        symbols = list(
-            dict.fromkeys(symbols)
-        )
-
-        return symbols
+        return list(dict.fromkeys(symbols))
 
     except Exception:
 
         return []
 
 
-# =====================================================
+# =========================================================
 # FIND MAJOR SWING LOW
-# =====================================================
+# =========================================================
 
 def find_swing_low(data):
 
@@ -127,10 +312,6 @@ def find_swing_low(data):
 
         target_index = None
 
-        # ---------------------------------------------
-        # FIND FIRST +20% HIT
-        # ---------------------------------------------
-
         for j in range(
             i + 1,
             len(data)
@@ -147,12 +328,6 @@ def find_swing_low(data):
 
         if target_index is None:
             continue
-
-
-        # ---------------------------------------------
-        # LOWER LOW AFTER SWING LOW
-        # BEFORE +20% INVALIDATES THIS SWING
-        # ---------------------------------------------
 
         lower_low_after = False
 
@@ -173,21 +348,14 @@ def find_swing_low(data):
         if lower_low_after:
             continue
 
-
-        # ---------------------------------------------
-        # CONFIRM 20% MOVE
-        # ---------------------------------------------
-
         move = (
             (
                 float(
                     data.iloc[target_index]["High"]
-                )
-                - swing_low
+                ) - swing_low
             )
             / swing_low
         ) * 100
-
 
         if move >= 20:
 
@@ -199,12 +367,8 @@ def find_swing_low(data):
                 }
             )
 
-
     if not candidates:
         return None
-
-
-    # Lowest valid swing low = major swing low
 
     candidates = sorted(
         candidates,
@@ -214,9 +378,9 @@ def find_swing_low(data):
     return candidates[0]["index"]
 
 
-# =====================================================
-# CHECK SETUP
-# =====================================================
+# =========================================================
+# CHECK COMPLETE SETUP
+# =========================================================
 
 def check_setup(data, swing_index):
 
@@ -224,20 +388,12 @@ def check_setup(data, swing_index):
         data.iloc[swing_index]["Low"]
     )
 
-    swing_date = data.index[
-        swing_index
-    ]
+    swing_date = data.index[swing_index]
 
     target = swing_low * 1.20
 
     target_index = None
-
     first_red_index = None
-
-
-    # =================================================
-    # SCAN FORWARD
-    # =================================================
 
     for i in range(
         swing_index + 1,
@@ -256,37 +412,22 @@ def check_setup(data, swing_index):
             data.iloc[i]["Close"]
         )
 
-        is_red = (
-            close_price < open_price
-        )
+        is_red = close_price < open_price
 
-
-        # =================================================
+        # ============================================
         # BEFORE +20%
-        # =================================================
+        # ============================================
 
         if target_index is None:
-
-
-            # ---------------------------------------------
-            # +20% CHECK FIRST
-            #
-            # The +20% candle itself is NOT counted
-            # as a red candle.
-            # ---------------------------------------------
 
             if high_price >= target:
 
                 target_index = i
 
+                # +20% candle is NOT counted as red
                 first_red_index = None
 
                 continue
-
-
-            # ---------------------------------------------
-            # STILL BELOW +20%
-            # ---------------------------------------------
 
             if is_red:
 
@@ -296,13 +437,8 @@ def check_setup(data, swing_index):
 
                 else:
 
-                    # -------------------------------------
-                    # TWO CONSECUTIVE RED CANDLES
-                    # BEFORE +20%
-                    #
-                    # SETUP INVALID
-                    # -------------------------------------
-
+                    # 2 red candles before +20%
+                    # setup rejected
                     return None
 
             else:
@@ -311,17 +447,11 @@ def check_setup(data, swing_index):
 
             continue
 
-
-        # =================================================
+        # ============================================
         # AFTER +20%
-        # =================================================
+        # ============================================
 
         if is_red:
-
-
-            # ---------------------------------------------
-            # FIRST RED
-            # ---------------------------------------------
 
             if first_red_index is None:
 
@@ -329,85 +459,49 @@ def check_setup(data, swing_index):
 
                 continue
 
-
-            # ---------------------------------------------
-            # SECOND CONSECUTIVE RED
-            # ---------------------------------------------
-
             second_red_index = i
-
-
-            # =================================================
-            # CHECK WHETHER THIS RED PAIR IS CURRENT
-            # =================================================
 
             recent_start = max(
                 0,
                 len(data) - RECENT_CANDLES
             )
 
-
+            # Old setup expired
             if second_red_index < recent_start:
-
-                # -----------------------------------------
-                # THIS SETUP IS OLD.
-                #
-                # IMPORTANT:
-                # DO NOT KEEP SEARCHING FOR ANOTHER
-                # RED PAIR FOR THE SAME +20% EVENT.
-                #
-                # THE OLD SETUP HAS EXPIRED.
-                # -----------------------------------------
-
                 return None
 
-
-            # =================================================
-            # CURRENT VALID SETUP
-            # =================================================
-
             return {
-
                 "Symbol": "",
-
-                "Swing Low":
-                    round(
-                        swing_low,
-                        2
-                    ),
-
+                "Swing Low": round(
+                    swing_low,
+                    2
+                ),
                 "Swing Low Date":
                     swing_date.strftime(
                         "%Y-%m-%d"
                     ),
-
-                "+20% Level":
-                    round(
-                        target,
-                        2
-                    ),
-
+                "+20% Level": round(
+                    target,
+                    2
+                ),
                 "+20% Date":
                     data.index[
                         target_index
                     ].strftime(
                         "%Y-%m-%d"
                     ),
-
                 "1st Red Date":
                     data.index[
                         first_red_index
                     ].strftime(
                         "%Y-%m-%d"
                     ),
-
                 "2nd Red Date":
                     data.index[
                         second_red_index
                     ].strftime(
                         "%Y-%m-%d"
                     ),
-
                 "2nd Red Close":
                     round(
                         close_price,
@@ -415,43 +509,23 @@ def check_setup(data, swing_index):
                     )
             }
 
-
         else:
 
-            # ---------------------------------------------
-            # GREEN CANDLE
-            #
-            # Consecutive red sequence broken.
-            # ---------------------------------------------
-
             first_red_index = None
-
-
-    # =================================================
-    # NO CURRENT SETUP
-    # =================================================
 
     return None
 
 
-# =====================================================
-# PROCESS STOCK
-# =====================================================
+# =========================================================
+# PROCESS ONE STOCK
+# =========================================================
 
-def process_stock(
-    symbol,
-    data
-):
+def process_stock(symbol, data):
 
     try:
 
         if data is None or data.empty:
             return None
-
-
-        # ---------------------------------------------
-        # FIX MULTIINDEX
-        # ---------------------------------------------
 
         if isinstance(
             data.columns,
@@ -482,7 +556,6 @@ def process_stock(
                     .get_level_values(0)
                 )
 
-
         required = [
             "Open",
             "High",
@@ -490,64 +563,46 @@ def process_stock(
             "Close"
         ]
 
-
         if not all(
             c in data.columns
             for c in required
         ):
-
             return None
-
 
         data = data.dropna(
             subset=required
         ).copy()
 
-
         if len(data) < 10:
             return None
-
-
-        # ---------------------------------------------
-        # FIND MAJOR SWING LOW
-        # ---------------------------------------------
 
         swing_index = find_swing_low(
             data
         )
 
-
         if swing_index is None:
             return None
-
-
-        # ---------------------------------------------
-        # CHECK SETUP
-        # ---------------------------------------------
 
         result = check_setup(
             data,
             swing_index
         )
 
-
         if result is None:
             return None
-
 
         result["Symbol"] = symbol
 
         return result
-
 
     except Exception:
 
         return None
 
 
-# =====================================================
+# =========================================================
 # DOWNLOAD BATCH
-# =====================================================
+# =========================================================
 
 def download_batch(symbols):
 
@@ -575,9 +630,9 @@ def download_batch(symbols):
         return pd.DataFrame()
 
 
-# =====================================================
-# GET STOCK FROM BATCH
-# =====================================================
+# =========================================================
+# EXTRACT ONE STOCK FROM BATCH
+# =========================================================
 
 def get_stock_from_batch(
     batch_data,
@@ -594,15 +649,16 @@ def get_stock_from_batch(
         ):
 
             level_zero = (
-                batch_data.columns
+                batch_data
+                .columns
                 .get_level_values(0)
             )
 
             level_one = (
-                batch_data.columns
+                batch_data
+                .columns
                 .get_level_values(1)
             )
-
 
             if ticker in level_zero:
 
@@ -610,13 +666,11 @@ def get_stock_from_batch(
                     ticker
                 ].copy()
 
-
             if symbol in level_zero:
 
                 return batch_data[
                     symbol
                 ].copy()
-
 
             if ticker in level_one:
 
@@ -626,7 +680,6 @@ def get_stock_from_batch(
                     level=1
                 ).copy()
 
-
             if symbol in level_one:
 
                 return batch_data.xs(
@@ -635,166 +688,46 @@ def get_stock_from_batch(
                     level=1
                 ).copy()
 
+        else:
+
+            return batch_data.copy()
 
         return None
-
 
     except Exception:
 
         return None
 
 
-# =====================================================
-# SCAN BUTTON
-# =====================================================
+# =========================================================
+# DISPLAY RESULTS
+# =========================================================
 
-if st.button(
-    "SCAN FULL NSE",
-    type="primary"
+def display_results(
+    results,
+    title,
+    total
 ):
 
-    status = st.empty()
-
-    status.write(
-        "Loading complete NSE equity list..."
-    )
-
-
-    # ---------------------------------------------
-    # NSE SYMBOLS
-    # ---------------------------------------------
-
-    symbols = get_nse_symbols()
-
-
-    if not symbols:
-
-        st.error(
-            "NSE stock list load nahi ho payi."
-        )
-
-        st.stop()
-
-
-    st.info(
-        f"Total NSE stocks found: {len(symbols)}"
-    )
-
-
-    results = []
-
-    progress = st.progress(0)
-
-    total = len(symbols)
-
-
-    batches = [
-        symbols[i:i + BATCH_SIZE]
-        for i in range(
-            0,
-            total,
-            BATCH_SIZE
-        )
-    ]
-
-
-    total_batches = len(
-        batches
-    )
-
-
-    # =================================================
-    # SCAN ALL BATCHES
-    # =================================================
-
-    for batch_number, batch in enumerate(
-        batches
-    ):
-
-        status.write(
-            f"Downloading batch "
-            f"{batch_number + 1}/"
-            f"{total_batches} "
-            f"({len(batch)} stocks)"
-        )
-
-
-        batch_data = download_batch(
-            batch
-        )
-
-
-        for symbol in batch:
-
-            stock_data = (
-                get_stock_from_batch(
-                    batch_data,
-                    symbol
-                )
-            )
-
-
-            result = process_stock(
-                symbol,
-                stock_data
-            )
-
-
-            if result is not None:
-
-                results.append(
-                    result
-                )
-
-
-        progress.progress(
-            min(
-                1.0,
-                (
-                    batch_number + 1
-                )
-                / total_batches
-            )
-        )
-
-
-        time.sleep(0.5)
-
-
-    # =================================================
-    # FINISHED
-    # =================================================
-
-    status.empty()
-
-
     st.success(
-        "FULL NSE SCAN COMPLETE"
+        f"{title} SCAN COMPLETE"
     )
-
 
     st.write(
-        "Total NSE Stocks:",
+        "Total Stocks:",
         total
     )
-
 
     st.write(
         "Current Matches:",
         len(results)
     )
 
-
-    # =================================================
-    # SHOW RESULTS
-    # =================================================
-
     if results:
 
         df = pd.DataFrame(
             results
         )
-
 
         columns = [
             "Symbol",
@@ -807,15 +740,12 @@ if st.button(
             "2nd Red Close"
         ]
 
-
         df = df[columns]
-
 
         df = df.sort_values(
             by="2nd Red Date",
             ascending=False
         )
-
 
         st.dataframe(
             df,
@@ -823,9 +753,284 @@ if st.button(
             hide_index=True
         )
 
-
     else:
 
         st.warning(
             "0 CURRENT MATCHES"
         )
+
+
+# =========================================================
+# GENERIC SCANNER
+# =========================================================
+
+def scan_universe(
+    symbols,
+    universe_name
+):
+
+    status = st.empty()
+
+    results = []
+
+    progress = st.progress(0)
+
+    total = len(symbols)
+
+    if total == 0:
+
+        st.error(
+            f"{universe_name} ke stocks nahi mile."
+        )
+
+        return
+
+    batches = [
+        symbols[i:i + BATCH_SIZE]
+        for i in range(
+            0,
+            total,
+            BATCH_SIZE
+        )
+    ]
+
+    total_batches = len(batches)
+
+    for batch_number, batch in enumerate(
+        batches
+    ):
+
+        status.write(
+            f"Downloading {universe_name} "
+            f"batch {batch_number + 1}/"
+            f"{total_batches} "
+            f"({len(batch)} stocks)"
+        )
+
+        batch_data = download_batch(
+            batch
+        )
+
+        for symbol in batch:
+
+            stock_data = (
+                get_stock_from_batch(
+                    batch_data,
+                    symbol
+                )
+            )
+
+            result = process_stock(
+                symbol,
+                stock_data
+            )
+
+            if result is not None:
+
+                results.append(
+                    result
+                )
+
+        progress.progress(
+            min(
+                1.0,
+                (
+                    batch_number + 1
+                ) / total_batches
+            )
+        )
+
+        time.sleep(0.5)
+
+    status.empty()
+
+    progress.empty()
+
+    display_results(
+        results,
+        universe_name,
+        total
+    )
+
+
+# =========================================================
+# TABS
+# =========================================================
+
+tab1, tab2, tab3 = st.tabs(
+    [
+        "📊 FULL NSE",
+        "📈 NIFTY 500",
+        "🚀 IPO"
+    ]
+)
+
+
+# =========================================================
+# FULL NSE
+# =========================================================
+
+with tab1:
+
+    st.subheader(
+        "Full NSE Equity Scanner"
+    )
+
+    st.write(
+        "Complete NSE equity universe scan."
+    )
+
+    if st.button(
+        "SCAN FULL NSE",
+        type="primary",
+        key="scan_nse"
+    ):
+
+        status = st.empty()
+
+        status.write(
+            "Loading complete NSE equity list..."
+        )
+
+        symbols = get_nse_symbols()
+
+        if not symbols:
+
+            st.error(
+                "NSE stock list load nahi ho payi."
+            )
+
+            st.stop()
+
+        st.info(
+            f"Total NSE stocks found: "
+            f"{len(symbols)}"
+        )
+
+        scan_universe(
+            symbols,
+            "FULL NSE"
+        )
+
+
+# =========================================================
+# NIFTY 500
+# =========================================================
+
+with tab2:
+
+    st.subheader(
+        "NIFTY 500 Scanner"
+    )
+
+    st.write(
+        "NIFTY 500 master Excel ke 500 stocks scan honge."
+    )
+
+    if st.button(
+        "SCAN NIFTY 500",
+        type="primary",
+        key="scan_nifty500"
+    ):
+
+        symbols = get_nifty500_symbols()
+
+        if not symbols:
+
+            st.error(
+                "NIFTY 500 master Excel nahi mila."
+            )
+
+            st.info(
+                "File ko repo me "
+                "NIFTY500/MASTER/"
+                "NIFTY500_MASTER.xlsx "
+                "me rakho."
+            )
+
+            st.stop()
+
+        st.info(
+            f"NIFTY 500 stocks found: "
+            f"{len(symbols)}"
+        )
+
+        scan_universe(
+            symbols,
+            "NIFTY 500"
+        )
+
+
+# =========================================================
+# IPO
+# =========================================================
+
+with tab3:
+
+    st.subheader(
+        "IPO Scanner"
+    )
+
+    st.write(
+        "01-Jan-2025 se listed IPOs → Current"
+    )
+
+    ipo_df = get_ipo_list()
+
+    if ipo_df.empty:
+
+        st.warning(
+            "IPO listing data nahi mil paya."
+        )
+
+    else:
+
+        st.info(
+            f"IPO stocks available for scan: "
+            f"{len(ipo_df)}"
+        )
+
+        st.caption(
+            "Naya IPO NSE par list hone ke baad "
+            "automatically is list me include ho jayega."
+        )
+
+        show_ipo_list = st.checkbox(
+            "Show IPO list",
+            key="show_ipo_list"
+        )
+
+        if show_ipo_list:
+
+            display_ipo = ipo_df.copy()
+
+            display_ipo[
+                "LISTING_DATE"
+            ] = display_ipo[
+                "LISTING_DATE"
+            ].dt.strftime(
+                "%Y-%m-%d"
+            )
+
+            st.dataframe(
+                display_ipo,
+                use_container_width=True,
+                hide_index=True
+            )
+
+        if st.button(
+            "SCAN IPO",
+            type="primary",
+            key="scan_ipo"
+        ):
+
+            ipo_symbols = (
+                ipo_df["SYMBOL"]
+                .astype(str)
+                .tolist()
+            )
+
+            scan_universe(
+                ipo_symbols,
+                "IPO"
+            )
