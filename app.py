@@ -5,7 +5,6 @@ import requests
 import io
 import time
 import re
-import aynse
 
 st.set_page_config(
     page_title="NSE Swing Scanner",
@@ -251,40 +250,118 @@ def get_ipo_symbols():
 
     try:
 
-        start_date = "2025-01-01"
-        end_date = pd.Timestamp.today().strftime(
-            "%Y-%m-%d"
+        url = (
+            "https://www.nseindia.com/static/"
+            "companies-listing/public-issue-advertisements"
         )
 
-        records = aynse.ipo_past_issues(
-            start_date,
-            end_date,
-            boards=["mainboard"]
+        response = requests.get(
+            url,
+            headers=HEADERS,
+            timeout=30
         )
 
-        if not records:
+        response.raise_for_status()
+
+        tables = pd.read_html(
+            io.StringIO(response.text)
+        )
+
+        if not tables:
             return []
+
+        start_date = pd.Timestamp(
+            "2025-01-01"
+        )
 
         symbols = []
 
-        for item in records:
+        for table in tables:
 
-            if not isinstance(item, dict):
-                continue
+            table.columns = [
+                str(c).strip()
+                for c in table.columns
+            ]
 
-            symbol = (
-                item.get("symbol")
-                or item.get("SYMBOL")
-                or item.get("Symbol")
-            )
+            for _, row in table.iterrows():
 
-            if not symbol:
-                continue
+                row_text = " ".join(
+                    str(x)
+                    for x in row.tolist()
+                )
 
-            symbol = clean_symbol(symbol)
+                # SME ko completely reject
+                if "SME Board" in row_text:
+                    continue
 
-            if symbol:
-                symbols.append(symbol)
+                # Sirf Main Board
+                if "Main Board" not in row_text:
+                    continue
+
+                # IPO hona chahiye
+                if "IPO" not in row_text:
+                    continue
+
+                # Row mein dates find karo
+                dates = re.findall(
+                    r"\d{2}\.\d{2}\.\d{4}",
+                    row_text
+                )
+
+                if not dates:
+                    continue
+
+                try:
+
+                    issue_date = pd.to_datetime(
+                        dates[0],
+                        format="%d.%m.%Y",
+                        errors="coerce"
+                    )
+
+                except Exception:
+
+                    continue
+
+                if pd.isna(issue_date):
+                    continue
+
+                if issue_date < start_date:
+                    continue
+
+                # Symbol identify karne ki koshish
+                symbol = None
+
+                for value in row.tolist():
+
+                    text_value = str(
+                        value
+                    ).strip()
+
+                    if re.fullmatch(
+                        r"[A-Z][A-Z0-9&\-]{1,19}",
+                        text_value
+                    ):
+
+                        if text_value not in [
+                            "IPO",
+                            "MAIN",
+                            "BOARD"
+                        ]:
+
+                            symbol = text_value
+                            break
+
+                if symbol:
+
+                    symbol = clean_symbol(
+                        symbol
+                    )
+
+                    if symbol:
+                        symbols.append(
+                            symbol
+                        )
 
         symbols = list(
             dict.fromkeys(symbols)
@@ -299,6 +376,7 @@ def get_ipo_symbols():
         )
 
         return []
+        
 def find_swing_low(data):
 
     if data is None or data.empty:
