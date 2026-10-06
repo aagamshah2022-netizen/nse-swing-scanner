@@ -250,15 +250,14 @@ def get_ipo_symbols():
 
     try:
 
-        url = (
-            "https://www.xflot.com/api/public/market/ipos"
-        )
+        url = "https://www.xflot.com/api/public/market/ipos"
 
         response = requests.get(
             url,
             params={
                 "status": "LISTED",
-                "board": "MAINBOARD"
+                "board": "MAINBOARD",
+                "limit": 200
             },
             headers={
                 "User-Agent": "Mozilla/5.0"
@@ -270,22 +269,15 @@ def get_ipo_symbols():
 
         data = response.json()
 
-        if isinstance(data, dict):
-            records = (
-                data.get("data")
-                or data.get("ipos")
-                or data.get("results")
-                or []
-            )
-        else:
-            records = data
+        records = data.get("ipos", [])
 
         if not isinstance(records, list):
             return []
 
-        start_date = pd.Timestamp(
-            "2025-01-01"
-        )
+        # IMPORTANT:
+        # Xflot dates are UTC / timezone-aware.
+        # Convert everything to timezone-naive date.
+        start_date = pd.Timestamp("2025-01-01")
 
         symbols = []
 
@@ -310,34 +302,32 @@ def get_ipo_symbols():
             if not symbol or not listing_date:
                 continue
 
-            symbol = clean_symbol(
-                symbol
-            )
+            symbol = clean_symbol(symbol)
 
             listed_date = pd.to_datetime(
                 listing_date,
-                errors="coerce"
+                errors="coerce",
+                utc=True
             )
 
             if pd.isna(listed_date):
                 continue
+
+            # Remove timezone before comparison
+            listed_date = listed_date.tz_localize(None)
 
             if listed_date < start_date:
                 continue
 
             symbols.append(symbol)
 
-        symbols = list(
-            dict.fromkeys(symbols)
-        )
+        symbols = list(dict.fromkeys(symbols))
 
         return sorted(symbols)
 
     except Exception as e:
 
-        st.error(
-            f"IPO data error: {e}"
-        )
+        st.error(f"IPO data error: {e}")
 
         return []
         
