@@ -5,6 +5,7 @@ import requests
 import io
 import time
 import re
+import aynse
 
 st.set_page_config(
     page_title="NSE Swing Scanner",
