@@ -5,6 +5,7 @@ import requests
 import io
 import time
 import re
+from aynse import ipo_past_issues
 
 st.set_page_config(
     page_title="NSE Swing Scanner",
@@ -250,182 +251,54 @@ def get_ipo_symbols():
 
     try:
 
-        # Xflot se listed MAINBOARD IPO names/slugs
-        url = "https://www.xflot.com/api/public/market/ipos"
-
-        response = requests.get(
-            url,
-            params={
-                "status": "LISTED",
-                "board": "MAINBOARD",
-                "limit": 200
-            },
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            },
-            timeout=30
+        records = ipo_past_issues(
+            boards=["mainboard"]
         )
 
-        response.raise_for_status()
-
-        data = response.json()
-
-        records = data.get("ipos", [])
-
-        if not isinstance(records, list):
+        if not records:
             return []
 
         start_date = pd.Timestamp("2025-01-01")
 
-        # -------------------------------------------------
-        # IMPORTANT:
-        # Xflot does not reliably provide NSE symbols.
-        # We therefore build the IPO company-name universe
-        # first, then match it against NSE equity master.
-        # -------------------------------------------------
-
-        ipo_names = []
+        symbols = []
 
         for item in records:
 
             if not isinstance(item, dict):
                 continue
 
-            board = str(
-                item.get("board", "")
-            ).upper().strip()
+            symbol = (
+                item.get("symbol")
+                or item.get("SYMBOL")
+            )
 
-            if board != "MAINBOARD":
+            listing_date = (
+                item.get("listing_date")
+                or item.get("listingDate")
+                or item.get("listed_on")
+                or item.get("listedOn")
+            )
+
+            if not symbol or not listing_date:
                 continue
 
-            # Listed IPOs have closeDate.
-            # Convert timezone safely.
-            close_date = pd.to_datetime(
-                item.get("closeDate"),
+            symbol = clean_symbol(symbol)
+
+            listed_date = pd.to_datetime(
+                listing_date,
                 errors="coerce",
                 utc=True
             )
 
-            if pd.isna(close_date):
+            if pd.isna(listed_date):
                 continue
 
-            close_date = close_date.tz_localize(None)
+            listed_date = listed_date.tz_localize(None)
 
-            # Only IPOs from 2025 onward
-            if close_date < start_date:
+            if listed_date < start_date:
                 continue
 
-            name = (
-                item.get("name")
-                or item.get("company")
-                or ""
-            )
-
-            name = str(name).strip().upper()
-
-            if not name:
-                continue
-
-            ipo_names.append(name)
-
-        ipo_names = list(
-            dict.fromkeys(ipo_names)
-        )
-
-        if not ipo_names:
-            return []
-
-        # -------------------------------------------------
-        # NSE EQUITY MASTER
-        # Used only to obtain actual NSE symbols.
-        # -------------------------------------------------
-
-        response = requests.get(
-            NSE_LIST_URL,
-            headers=HEADERS,
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        nse_df = pd.read_csv(
-            io.BytesIO(response.content)
-        )
-
-        if "SYMBOL" not in nse_df.columns:
-            return []
-
-        if "NAME OF COMPANY" in nse_df.columns:
-            company_col = "NAME OF COMPANY"
-        elif "COMPANY NAME" in nse_df.columns:
-            company_col = "COMPANY NAME"
-        else:
-            return []
-
-        nse_df["SYMBOL"] = (
-            nse_df["SYMBOL"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-
-        nse_df[company_col] = (
-            nse_df[company_col]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-        )
-
-        # -------------------------------------------------
-        # Match IPO company names with NSE company names
-        # -------------------------------------------------
-
-        symbols = []
-
-        for ipo_name in ipo_names:
-
-            ipo_clean = re.sub(
-                r"[^A-Z0-9]",
-                "",
-                ipo_name
-            )
-
-            best_symbol = None
-
-            for _, row in nse_df.iterrows():
-
-                company_name = str(
-                    row[company_col]
-                )
-
-                company_clean = re.sub(
-                    r"[^A-Z0-9]",
-                    "",
-                    company_name
-                )
-
-                if not company_clean:
-                    continue
-
-                # Exact match
-                if ipo_clean == company_clean:
-                    best_symbol = row["SYMBOL"]
-                    break
-
-                # IPO name contained inside NSE name
-                if (
-                    len(ipo_clean) >= 12
-                    and (
-                        ipo_clean in company_clean
-                        or company_clean in ipo_clean
-                    )
-                ):
-                    best_symbol = row["SYMBOL"]
-
-            if best_symbol:
-                symbols.append(
-                    clean_symbol(best_symbol)
-                )
+            symbols.append(symbol)
 
         symbols = list(
             dict.fromkeys(symbols)
