@@ -250,49 +250,19 @@ def get_nifty500_symbols():
 def get_ipo_symbols():
 
     try:
-        start_date = pd.Timestamp("2025-01-01")
-        today = pd.Timestamp.today().normalize()
 
-        session = requests.Session()
-
-        session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/154.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.nseindia.com/"
-        })
-
-        session.get(
-            "https://www.nseindia.com/",
-            timeout=20
+        start_date = "2025-01-01"
+        end_date = pd.Timestamp.today().strftime(
+            "%Y-%m-%d"
         )
 
-        url = (
-            "https://www.nseindia.com/api/"
-            "ipo-tracker?type=ipo_year"
+        records = aynse.ipo_past_issues(
+            start_date,
+            end_date,
+            boards=["mainboard"]
         )
 
-        response = session.get(
-            url,
-            timeout=30
-        )
-
-        if response.status_code != 200:
-            return []
-
-        data = response.json()
-
-        if isinstance(data, dict):
-            records = data.get("data", [])
-        else:
-            records = data
-
-        if not isinstance(records, list):
+        if not records:
             return []
 
         symbols = []
@@ -302,53 +272,18 @@ def get_ipo_symbols():
             if not isinstance(item, dict):
                 continue
 
-            board = str(
-                item.get("board")
-                or item.get("BOARD")
-                or item.get("typeOfBoard")
-                or item.get("TYPE_OF_BOARD")
-                or ""
-            ).strip().lower()
-
-            # SME ko completely reject karo
-            if "sme" in board:
-                continue
-
-            # Sirf Main Board
-            if "main" not in board:
-                continue
-
             symbol = (
                 item.get("symbol")
                 or item.get("SYMBOL")
                 or item.get("Symbol")
             )
 
-            listed_on = (
-                item.get("listedOn")
-                or item.get("LISTED ON")
-                or item.get("LISTED_ON")
-                or item.get("listed_on")
-            )
-
-            if not symbol or not listed_on:
+            if not symbol:
                 continue
 
             symbol = clean_symbol(symbol)
 
-            listed_date = pd.to_datetime(
-                listed_on,
-                errors="coerce",
-                dayfirst=True
-            )
-
-            if pd.isna(listed_date):
-                continue
-
-            if (
-                listed_date >= start_date
-                and listed_date <= today
-            ):
+            if symbol:
                 symbols.append(symbol)
 
         symbols = list(
@@ -364,7 +299,6 @@ def get_ipo_symbols():
         )
 
         return []
-
 def find_swing_low(data):
 
     if data is None or data.empty:
