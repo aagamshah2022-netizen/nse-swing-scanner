@@ -252,62 +252,116 @@ def get_ipo_symbols():
 
         session = requests.Session()
 
-        session.headers.update(HEADERS)
+        session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/154.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://www.nseindia.com/"
+        })
 
         session.get(
             "https://www.nseindia.com/",
             timeout=20
         )
 
-        url = (
-            "https://www.nseindia.com/ipo-tracker"
-            "?type=ipo_year"
+        api_url = (
+            "https://www.nseindia.com/api/ipo-tracker"
         )
 
         response = session.get(
-            url,
+            api_url,
+            params={
+                "type": "ipo_year"
+            },
             timeout=30
         )
 
         if response.status_code != 200:
             return []
 
-        html = response.text
+        data = response.json()
 
-        symbols = set()
+        records = []
 
-        # NSE IPO tracker page se symbols identify karo
-        patterns = [
-            r'"symbol":"([A-Z0-9&\-]+)"',
-            r'"SYMBOL":"([A-Z0-9&\-]+)"',
-            r'"symbol"\s*:\s*"([A-Z0-9&\-]+)"'
-        ]
+        if isinstance(data, dict):
 
-        for pattern in patterns:
+            for key in [
+                "data",
+                "records",
+                "ipoData",
+                "ipo_data"
+            ]:
 
-            matches = re.findall(
-                pattern,
-                html,
-                flags=re.IGNORECASE
-            )
+                if key in data:
+                    records = data[key]
+                    break
 
-            for value in matches:
+        elif isinstance(data, list):
 
-                symbol = clean_symbol(value)
+            records = data
 
-                if symbol:
-                    symbols.add(symbol)
-
-        # Agar page ke HTML se data nahi mila
-        if len(symbols) == 0:
-
-            # NSE ke current equity symbols ko backup
-            # ke roop mein use nahi karna.
+        if not isinstance(records, list):
             return []
 
-        return sorted(
-            list(symbols)
+        start_date = pd.Timestamp(
+            "2025-01-01"
         )
+
+        symbols = []
+
+        for item in records:
+
+            if not isinstance(item, dict):
+                continue
+
+            symbol = (
+                item.get("symbol")
+                or item.get("SYMBOL")
+                or item.get("Symbol")
+            )
+
+            listed_on = (
+                item.get("listedOn")
+                or item.get("LISTED_ON")
+                or item.get("listed_on")
+                or item.get("Listed On")
+            )
+
+            if not symbol or not listed_on:
+                continue
+
+            symbol = clean_symbol(symbol)
+
+            try:
+
+                listed_date = pd.to_datetime(
+                    listed_on,
+                    dayfirst=True,
+                    errors="coerce"
+                )
+
+            except Exception:
+
+                continue
+
+            if pd.isna(listed_date):
+                continue
+
+            if listed_date >= start_date:
+
+                if symbol:
+                    symbols.append(symbol)
+
+        symbols = list(
+            dict.fromkeys(symbols)
+        )
+
+        return sorted(symbols)
 
     except Exception:
 
