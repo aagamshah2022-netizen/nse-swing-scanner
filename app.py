@@ -251,23 +251,36 @@ def get_ipo_symbols():
     try:
 
         url = (
-            "https://www.nseindia.com/static/"
-            "companies-listing/public-issue-advertisements"
+            "https://www.xflot.com/api/public/market/ipos"
         )
 
         response = requests.get(
             url,
-            headers=HEADERS,
+            params={
+                "status": "LISTED",
+                "board": "MAINBOARD"
+            },
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            },
             timeout=30
         )
 
         response.raise_for_status()
 
-        tables = pd.read_html(
-            io.StringIO(response.text)
-        )
+        data = response.json()
 
-        if not tables:
+        if isinstance(data, dict):
+            records = (
+                data.get("data")
+                or data.get("ipos")
+                or data.get("results")
+                or []
+            )
+        else:
+            records = data
+
+        if not isinstance(records, list):
             return []
 
         start_date = pd.Timestamp(
@@ -276,92 +289,43 @@ def get_ipo_symbols():
 
         symbols = []
 
-        for table in tables:
+        for item in records:
 
-            table.columns = [
-                str(c).strip()
-                for c in table.columns
-            ]
+            if not isinstance(item, dict):
+                continue
 
-            for _, row in table.iterrows():
+            symbol = (
+                item.get("symbol")
+                or item.get("SYMBOL")
+                or item.get("Symbol")
+            )
 
-                row_text = " ".join(
-                    str(x)
-                    for x in row.tolist()
-                )
+            listing_date = (
+                item.get("listingDate")
+                or item.get("listing_date")
+                or item.get("listedOn")
+                or item.get("listed_on")
+            )
 
-                # SME ko completely reject
-                if "SME Board" in row_text:
-                    continue
+            if not symbol or not listing_date:
+                continue
 
-                # Sirf Main Board
-                if "Main Board" not in row_text:
-                    continue
+            symbol = clean_symbol(
+                symbol
+            )
 
-                # IPO hona chahiye
-                if "IPO" not in row_text:
-                    continue
+            listed_date = pd.to_datetime(
+                listing_date,
+                errors="coerce"
+            )
 
-                # Row mein dates find karo
-                dates = re.findall(
-                    r"\d{2}\.\d{2}\.\d{4}",
-                    row_text
-                )
+            if pd.isna(listed_date):
+                continue
 
-                if not dates:
-                    continue
+            if listed_date < start_date:
+                continue
 
-                try:
-
-                    issue_date = pd.to_datetime(
-                        dates[0],
-                        format="%d.%m.%Y",
-                        errors="coerce"
-                    )
-
-                except Exception:
-
-                    continue
-
-                if pd.isna(issue_date):
-                    continue
-
-                if issue_date < start_date:
-                    continue
-
-                # Symbol identify karne ki koshish
-                symbol = None
-
-                for value in row.tolist():
-
-                    text_value = str(
-                        value
-                    ).strip()
-
-                    if re.fullmatch(
-                        r"[A-Z][A-Z0-9&\-]{1,19}",
-                        text_value
-                    ):
-
-                        if text_value not in [
-                            "IPO",
-                            "MAIN",
-                            "BOARD"
-                        ]:
-
-                            symbol = text_value
-                            break
-
-                if symbol:
-
-                    symbol = clean_symbol(
-                        symbol
-                    )
-
-                    if symbol:
-                        symbols.append(
-                            symbol
-                        )
+            symbols.append(symbol)
 
         symbols = list(
             dict.fromkeys(symbols)
