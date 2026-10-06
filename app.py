@@ -250,32 +250,63 @@ def get_ipo_symbols():
 
     try:
 
-        response = requests.get(
-            NSE_LIST_URL,
-            headers=HEADERS,
+        session = requests.Session()
+
+        session.headers.update(HEADERS)
+
+        session.get(
+            "https://www.nseindia.com/",
+            timeout=20
+        )
+
+        url = (
+            "https://www.nseindia.com/ipo-tracker"
+            "?type=ipo_year"
+        )
+
+        response = session.get(
+            url,
             timeout=30
         )
 
-        response.raise_for_status()
-
-        df = pd.read_csv(
-            io.BytesIO(response.content)
-        )
-
-        if "SYMBOL" not in df.columns:
+        if response.status_code != 200:
             return []
 
-        symbols = []
+        html = response.text
 
-        for value in df["SYMBOL"]:
+        symbols = set()
 
-            symbol = clean_symbol(value)
+        # NSE IPO tracker page se symbols identify karo
+        patterns = [
+            r'"symbol":"([A-Z0-9&\-]+)"',
+            r'"SYMBOL":"([A-Z0-9&\-]+)"',
+            r'"symbol"\s*:\s*"([A-Z0-9&\-]+)"'
+        ]
 
-            if symbol and symbol != "NAN":
-                symbols.append(symbol)
+        for pattern in patterns:
 
-        return list(
-            dict.fromkeys(symbols)
+            matches = re.findall(
+                pattern,
+                html,
+                flags=re.IGNORECASE
+            )
+
+            for value in matches:
+
+                symbol = clean_symbol(value)
+
+                if symbol:
+                    symbols.add(symbol)
+
+        # Agar page ke HTML se data nahi mila
+        if len(symbols) == 0:
+
+            # NSE ke current equity symbols ko backup
+            # ke roop mein use nahi karna.
+            return []
+
+        return sorted(
+            list(symbols)
         )
 
     except Exception:
