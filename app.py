@@ -191,60 +191,68 @@ def get_nse_symbols():
 # ============================================================
 
 @st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600)
 def get_nifty500_symbols():
 
-    # Method 1 - Official NSE API
+    urls = [
+        "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv",
+        "https://www.nseindia.com/content/indices/ind_nifty500list.csv"
+    ]
 
-    try:
+    for url in urls:
 
-        session = requests.Session()
+        try:
 
-        session.headers.update(
-            HEADERS
-        )
+            session = requests.Session()
 
-        session.get(
-            "https://www.nseindia.com/",
-            timeout=30
-        )
+            session.headers.update({
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/154.0.0.0 Safari/537.36"
+                ),
+                "Accept": "text/csv,*/*",
+                "Referer": "https://www.nseindia.com/"
+            })
 
-        api_url = (
-            "https://www.nseindia.com/api/"
-            "equity-stockIndices?index=NIFTY%20500"
-        )
-
-        response = session.get(
-            api_url,
-            timeout=30
-        )
-
-        if response.ok:
-
-            data = response.json()
-
-            rows = data.get(
-                "data",
-                []
+            session.get(
+                "https://www.nseindia.com/",
+                timeout=20
             )
+
+            response = session.get(
+                url,
+                timeout=30
+            )
+
+            if response.status_code != 200:
+                continue
+
+            content = response.content
+
+            if not content:
+                continue
+
+            df = pd.read_csv(
+                io.BytesIO(content)
+            )
+
+            df.columns = [
+                str(c).strip().upper()
+                for c in df.columns
+            ]
+
+            if "SYMBOL" not in df.columns:
+                continue
 
             symbols = []
 
-            for row in rows:
+            for value in df["SYMBOL"]:
 
-                symbol = row.get(
-                    "symbol"
-                )
+                symbol = clean_symbol(value)
 
-                if symbol:
-
-                    symbol = clean_symbol(
-                        symbol
-                    )
-
-                    if symbol:
-                        symbols.append(
-                            symbol
-                        )
+                if symbol and symbol != "NAN":
+                    symbols.append(symbol)
 
             symbols = list(
                 dict.fromkeys(symbols)
@@ -253,45 +261,10 @@ def get_nifty500_symbols():
             if len(symbols) >= 450:
                 return symbols
 
-    except Exception:
-        pass
+        except Exception:
+            continue
 
-
-    # Method 2 - NSE CSV
-
-    try:
-
-        response = requests.get(
-            NIFTY500_CSV_URL,
-            headers=HEADERS,
-            timeout=30
-        )
-
-        response.raise_for_status()
-
-        df = pd.read_csv(
-            io.BytesIO(response.content)
-        )
-
-        df.columns = [
-            str(c).strip().upper()
-            for c in df.columns
-        ]
-
-        symbol_column = None
-
-        for column in [
-            "SYMBOL",
-            "SYMBOLS"
-        ]:
-
-            if column in df.columns:
-                symbol_column = column
-                break
-
-        if symbol_column is None:
-            return []
-
+    return []
         symbols = (
             df[symbol_column]
             .astype(str)
