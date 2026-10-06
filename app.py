@@ -69,7 +69,7 @@ HEADERS = {
 # ============================================================
 
 def clean_symbol(symbol):
-symbol = str(symbol).strip().upper()
+    symbol = str(symbol).strip().upper()
 
 ```
 if symbol.endswith(".NS"):
