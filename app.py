@@ -251,67 +251,21 @@ def get_ipo_symbols():
 
     try:
 
-        session = requests.Session()
-
-        session.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/154.0.0.0 Safari/537.36"
-            ),
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://www.nseindia.com/"
-        })
-
-        session.get(
-            "https://www.nseindia.com/",
-            timeout=20
+        today = pd.Timestamp.today().strftime(
+            "%Y-%m-%d"
         )
 
-        api_url = (
-            "https://www.nseindia.com/api/ipo-tracker"
+        records = aynse.ipo_past_issues(
+            "2025-01-01",
+            today,
+            boards=[
+                "mainboard",
+                "sme"
+            ]
         )
 
-        response = session.get(
-            api_url,
-            params={
-                "type": "ipo_year"
-            },
-            timeout=30
-        )
-
-        if response.status_code != 200:
+        if records is None:
             return []
-
-        data = response.json()
-
-        records = []
-
-        if isinstance(data, dict):
-
-            for key in [
-                "data",
-                "records",
-                "ipoData",
-                "ipo_data"
-            ]:
-
-                if key in data:
-                    records = data[key]
-                    break
-
-        elif isinstance(data, list):
-
-            records = data
-
-        if not isinstance(records, list):
-            return []
-
-        start_date = pd.Timestamp(
-            "2025-01-01"
-        )
 
         symbols = []
 
@@ -326,48 +280,33 @@ def get_ipo_symbols():
                 or item.get("Symbol")
             )
 
-            listed_on = (
-                item.get("listedOn")
-                or item.get("LISTED_ON")
-                or item.get("listed_on")
-                or item.get("Listed On")
+            if not symbol:
+                continue
+
+            symbol = clean_symbol(
+                symbol
             )
 
-            if not symbol or not listed_on:
-                continue
-
-            symbol = clean_symbol(symbol)
-
-            try:
-
-                listed_date = pd.to_datetime(
-                    listed_on,
-                    dayfirst=True,
-                    errors="coerce"
+            if symbol:
+                symbols.append(
+                    symbol
                 )
-
-            except Exception:
-
-                continue
-
-            if pd.isna(listed_date):
-                continue
-
-            if listed_date >= start_date:
-
-                if symbol:
-                    symbols.append(symbol)
 
         symbols = list(
             dict.fromkeys(symbols)
         )
 
-        return sorted(symbols)
+        return sorted(
+            symbols
+        )
 
-    except Exception:
+    except Exception as e:
+
+        st.error(
+            f"IPO data error: {e}"
+        )
 
         return []
-
 
 def find_swing_low(data):
 
