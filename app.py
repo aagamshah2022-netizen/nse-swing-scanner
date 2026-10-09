@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -883,4 +882,4 @@ with tab3:
                 "IPO list load nahi hui. Current Scan tab mein "
                 "RETRY IPO LIST dabakar dobara try karo."
             )
-```
+
