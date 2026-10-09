@@ -1,4 +1,4 @@
-
+```python
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -109,6 +109,8 @@ def get_nse_symbols():
         response.raise_for_status()
         df = pd.read_csv(io.BytesIO(response.content))
 
+        df.columns = [str(c).strip().upper() for c in df.columns]
+
         if "SYMBOL" not in df.columns:
             return []
 
@@ -168,56 +170,139 @@ def get_nifty500_symbols():
     return []
 
 
-@st.cache_data(ttl=3600)
+def normalize_ipo_records(records):
+    """Convert IPO results to a standard list of dictionaries."""
+    if isinstance(records, pd.DataFrame):
+        return records.to_dict("records")
+
+    if isinstance(records, dict):
+        for key in ("data", "records", "results", "issues"):
+            if isinstance(records.get(key), list):
+                return records[key]
+        return [records]
+
+    if isinstance(records, list):
+        return records
+
+    return []
+
+
+def get_ipo_symbol_from_record(item):
+    """Read possible symbol and listing-date field names."""
+    if not isinstance(item, dict):
+        return None, None
+
+    lowered = {
+        str(key).strip().lower().replace(" ", "_"): value
+        for key, value in item.items()
+    }
+
+    symbol = (
+        lowered.get("symbol")
+        or lowered.get("trading_symbol")
+        or lowered.get("ticker")
+    )
+
+    listing_date = (
+        lowered.get("listing_date")
+        or lowered.get("listingdate")
+        or lowered.get("listed_on")
+        or lowered.get("listedon")
+        or lowered.get("date_of_listing")
+        or lowered.get("listing_date_time")
+    )
+
+    return symbol, listing_date
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
 def get_ipo_symbols():
-    try:
-        records = ipo_past_issues(boards=["mainboard"])
+    """
+    Load mainboard IPOs from 2020 onward in yearly chunks.
+    A failed year does not prevent other years from loading.
+    """
+    cutoff = pd.Timestamp("2020-01-01")
+    symbols = set()
+    successful_years = []
+    failed_years = []
 
-        if isinstance(records, pd.DataFrame):
-            records = records.to_dict("records")
+    current_year = pd.Timestamp.now(tz="Asia/Kolkata").year
 
-        if not records:
-            return []
+    for year in range(2020, current_year + 1):
+        year_records = None
+        last_error = None
 
-        cutoff = pd.Timestamp("2020-01-01")
-        symbols = []
+        # Try each year up to 3 times.
+        for attempt in range(3):
+            try:
+                year_records = ipo_past_issues(
+                    f"{year}-01-01",
+                    f"{year}-12-31",
+                    boards=["mainboard"]
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(1.5 * (attempt + 1))
+
+        if year_records is None:
+            failed_years.append(year)
+            continue
+
+        records = normalize_ipo_records(year_records)
+        year_added = 0
 
         for item in records:
-            if not isinstance(item, dict):
-                continue
-
-            symbol = item.get("symbol") or item.get("SYMBOL")
-            listing_date = (
-                item.get("listing_date")
-                or item.get("listingDate")
-                or item.get("listed_on")
-                or item.get("listedOn")
-            )
+            symbol, listing_date = get_ipo_symbol_from_record(item)
 
             if not symbol or not listing_date:
                 continue
 
-            listed_date = pd.to_datetime(
+            parsed_date = pd.to_datetime(
                 listing_date,
                 errors="coerce",
                 utc=True
             )
 
-            if pd.isna(listed_date):
+            if pd.isna(parsed_date):
                 continue
 
-            listed_date = listed_date.tz_localize(None)
+            try:
+                parsed_date = parsed_date.tz_localize(None)
+            except (TypeError, AttributeError):
+                pass
 
-            if listed_date >= cutoff:
-                symbols.append(clean_symbol(symbol))
+            if parsed_date < cutoff:
+                continue
 
-        return sorted(set(
-            s for s in symbols if s and s != "NAN"
-        ))
+            cleaned = clean_symbol(symbol)
+            if cleaned and cleaned != "NAN":
+                symbols.add(cleaned)
+                year_added += 1
 
-    except Exception as e:
-        st.error(f"IPO list error: {e}")
-        return []
+        successful_years.append(year)
+
+        # Avoid sending requests too quickly to NSE.
+        time.sleep(0.25)
+
+    result = sorted(symbols)
+
+    if failed_years:
+        st.warning(
+            "IPO data kuch saalon ke liye load nahi hua: "
+            + ", ".join(map(str, failed_years))
+            + ". Retry button se dobara try kar sakte ho."
+        )
+
+    if not result:
+        st.error(
+            "IPO list load nahi hui. NSE data source ya internet "
+            "temporarily unavailable ho sakta hai. "
+            "IPO list ko dobara load karne ke liye Retry IPO List dabao."
+        )
+
+    return result
 
 
 def download_batch(symbols):
@@ -382,7 +467,6 @@ def process_stock(symbol, data):
 
     start = max(1, len(data) - SWING_LOOKBACK)
 
-    # Latest valid 3-candle swing low first.
     for i in range(len(data) - 2, start - 1, -1):
         current_low = float(data.iloc[i]["Low"])
         previous_low = float(data.iloc[i - 1]["Low"])
@@ -413,7 +497,7 @@ def run_scanner(symbols, scanner_name):
     for batch_number, batch in enumerate(batches):
         status.write(
             f"{scanner_name}: Batch "
-            f"{batch_number + 1}/{len(batches)} of {len(batches)}"
+            f"{batch_number + 1}/{len(batches)}"
         )
 
         batch_data = download_batch(batch)
@@ -441,12 +525,10 @@ def run_historical_backtest(symbols, start_date, end_date, scanner_name):
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date)
 
-    # Extra history is needed to identify swing lows near period start.
     history_start = (
         start_ts - pd.Timedelta(days=365)
     ).strftime("%Y-%m-%d")
 
-    # Yahoo Finance end date is exclusive.
     history_end = (
         end_ts + pd.Timedelta(days=1)
     ).strftime("%Y-%m-%d")
@@ -526,12 +608,7 @@ def run_historical_backtest(symbols, start_date, end_date, scanner_name):
                     else:
                         first_red = None
 
-                if swing_broken:
-                    i += 1
-                    continue
-
-                if rejected_before_target:
-                    # Rejected setups are intentionally not displayed.
+                if swing_broken or rejected_before_target:
                     i += 1
                     continue
 
@@ -539,7 +616,7 @@ def run_historical_backtest(symbols, start_date, end_date, scanner_name):
                     i += 1
                     continue
 
-                # Target-hit candle is excluded from red count.
+                # Target candle itself is excluded from red counting.
                 first_red = None
                 confirmed = False
 
@@ -770,14 +847,25 @@ with tab3:
         st.subheader("IPO Scanner")
 
         if st.button(
+            "RETRY IPO LIST",
+            key="retry_ipo_list"
+        ):
+            get_ipo_symbols.clear()
+            st.rerun()
+
+        if st.button(
             "SCAN IPO",
             type="primary",
             key="ipo"
         ):
+            get_ipo_symbols.clear()
             symbols = get_ipo_symbols()
 
             if not symbols:
-                st.error("IPO stock list load nahi hui.")
+                st.error(
+                    "IPO list abhi load nahi hui. "
+                    "RETRY IPO LIST dabao aur phir dobara try karo."
+                )
             else:
                 st.info(f"IPO stocks: {len(symbols)}")
                 results = run_scanner(symbols, "IPO")
@@ -791,4 +879,8 @@ with tab3:
                 symbols, "IPO", "ipo"
             )
         else:
-            st.warning("IPO list load nahi hui.")
+            st.warning(
+                "IPO list load nahi hui. Current Scan tab mein "
+                "RETRY IPO LIST dabakar dobara try karo."
+            )
+```
