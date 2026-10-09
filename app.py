@@ -1,3 +1,4 @@
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -23,6 +24,8 @@ YF_INTERVAL = "1d"
 SWING_LOOKBACK = 30
 BATCH_SIZE = 80
 RECENT_CANDLES = 5
+
+BACKTEST_START = "2026-01-01"
 
 NSE_LIST_URL = (
     "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
@@ -51,22 +54,16 @@ def clean_symbol(symbol):
     if symbol.endswith(".NS"):
         symbol = symbol[:-3]
 
-    symbol = re.sub(r"\s+", "", symbol)
-
-    return symbol
+    return re.sub(r"\s+", "", symbol)
 
 
 def normalize_dataframe(data, symbol=None):
-
     try:
-
         if data is None or data.empty:
             return pd.DataFrame()
 
         if isinstance(data.columns, pd.MultiIndex):
-
             if symbol is not None:
-
                 symbol = clean_symbol(symbol)
                 ticker = symbol + ".NS"
 
@@ -74,7 +71,6 @@ def normalize_dataframe(data, symbol=None):
                     str(x).upper()
                     for x in data.columns.get_level_values(0)
                 ]
-
                 level1 = [
                     str(x).upper()
                     for x in data.columns.get_level_values(1)
@@ -82,139 +78,86 @@ def normalize_dataframe(data, symbol=None):
 
                 if ticker.upper() in level0:
                     data = data[ticker].copy()
-
                 elif symbol.upper() in level0:
                     data = data[symbol].copy()
-
                 elif ticker.upper() in level1:
                     data = data.xs(
-                        ticker,
-                        axis=1,
-                        level=1
+                        ticker, axis=1, level=1
                     ).copy()
-
                 elif symbol.upper() in level1:
                     data = data.xs(
-                        symbol,
-                        axis=1,
-                        level=1
+                        symbol, axis=1, level=1
                     ).copy()
-
                 else:
-                    data.columns = (
-                        data.columns.get_level_values(0)
-                    )
-
+                    data.columns = data.columns.get_level_values(0)
             else:
-                data.columns = (
-                    data.columns.get_level_values(0)
-                )
+                data.columns = data.columns.get_level_values(0)
 
-        required = [
-            "Open",
-            "High",
-            "Low",
-            "Close"
-        ]
+        required = ["Open", "High", "Low", "Close"]
 
-        if not all(
-            column in data.columns
-            for column in required
-        ):
+        if not all(column in data.columns for column in required):
             return pd.DataFrame()
 
-        data = data.dropna(
-            subset=required
-        ).copy()
-
+        data = data.dropna(subset=required).copy()
         data = data.sort_index()
+        data = data[~data.index.duplicated(keep="last")]
 
         return data
 
     except Exception:
-
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=3600)
 def get_nse_symbols():
-
     try:
-
         response = requests.get(
             NSE_LIST_URL,
             headers=HEADERS,
             timeout=30
         )
-
         response.raise_for_status()
 
-        df = pd.read_csv(
-            io.BytesIO(response.content)
-        )
+        df = pd.read_csv(io.BytesIO(response.content))
 
         if "SYMBOL" not in df.columns:
             return []
 
-        symbols = []
+        symbols = [
+            clean_symbol(value)
+            for value in df["SYMBOL"]
+            if clean_symbol(value) not in ("", "NAN")
+        ]
 
-        for value in df["SYMBOL"]:
-
-            symbol = clean_symbol(value)
-
-            if symbol and symbol != "NAN":
-                symbols.append(symbol)
-
-        return list(
-            dict.fromkeys(symbols)
-        )
+        return list(dict.fromkeys(symbols))
 
     except Exception:
-
         return []
 
 
 @st.cache_data(ttl=3600)
 def get_nifty500_symbols():
-
     urls = [
         NIFTY500_URL,
-        (
-            "https://www.nseindia.com/content/indices/"
-            "ind_nifty500list.csv"
-        )
+        "https://www.nseindia.com/content/indices/ind_nifty500list.csv"
     ]
 
     for url in urls:
-
         try:
-
             session = requests.Session()
-
-            session.headers.update(
-                HEADERS
-            )
+            session.headers.update(HEADERS)
 
             session.get(
                 "https://www.nseindia.com/",
                 timeout=20
             )
 
-            response = session.get(
-                url,
-                timeout=30
-            )
+            response = session.get(url, timeout=30)
 
-            if response.status_code != 200:
+            if response.status_code != 200 or not response.content:
                 continue
 
-            if not response.content:
-                continue
-
-            df = pd.read_csv(
-                io.BytesIO(response.content)
-            )
-
+            df = pd.read_csv(io.BytesIO(response.content))
             df.columns = [
                 str(column).strip().upper()
                 for column in df.columns
@@ -223,24 +166,18 @@ def get_nifty500_symbols():
             if "SYMBOL" not in df.columns:
                 continue
 
-            symbols = []
+            symbols = [
+                clean_symbol(value)
+                for value in df["SYMBOL"]
+                if clean_symbol(value) not in ("", "NAN")
+            ]
 
-            for value in df["SYMBOL"]:
-
-                symbol = clean_symbol(value)
-
-                if symbol and symbol != "NAN":
-                    symbols.append(symbol)
-
-            symbols = list(
-                dict.fromkeys(symbols)
-            )
+            symbols = list(dict.fromkeys(symbols))
 
             if len(symbols) >= 450:
                 return symbols
 
         except Exception:
-
             continue
 
     return []
@@ -248,22 +185,19 @@ def get_nifty500_symbols():
 
 @st.cache_data(ttl=3600)
 def get_ipo_symbols():
-
     try:
+        records = ipo_past_issues(boards=["mainboard"])
 
-        records = ipo_past_issues(
-            boards=["mainboard"]
-        )
+        if isinstance(records, pd.DataFrame):
+            records = records.to_dict("records")
 
         if not records:
             return []
 
         start_date = pd.Timestamp("2020-01-01")
-
         symbols = []
 
         for item in records:
-
             if not isinstance(item, dict):
                 continue
 
@@ -282,8 +216,6 @@ def get_ipo_symbols():
             if not symbol or not listing_date:
                 continue
 
-            symbol = clean_symbol(symbol)
-
             listed_date = pd.to_datetime(
                 listing_date,
                 errors="coerce",
@@ -298,50 +230,29 @@ def get_ipo_symbols():
             if listed_date < start_date:
                 continue
 
-            symbols.append(symbol)
+            symbols.append(clean_symbol(symbol))
 
-        symbols = list(
-            dict.fromkeys(symbols)
-        )
-
-        return sorted(symbols)
+        return sorted(set(
+            symbol for symbol in symbols
+            if symbol and symbol != "NAN"
+        ))
 
     except Exception as e:
-
-        st.error(
-            f"IPO data error: {e}"
-        )
-
+        st.error(f"IPO data error: {e}")
         return []
-        
-def find_swing_low(data):
 
+
+def find_swing_low(data):
     if data is None or data.empty:
         return None
 
-    start = max(
-        1,
-        len(data) - SWING_LOOKBACK
-    )
-
+    start = max(1, len(data) - SWING_LOOKBACK)
     candidates = []
 
-    for i in range(
-        start,
-        len(data) - 1
-    ):
-
-        swing_low = float(
-            data.iloc[i]["Low"]
-        )
-
-        previous_low = float(
-            data.iloc[i - 1]["Low"]
-        )
-
-        next_low = float(
-            data.iloc[i + 1]["Low"]
-        )
+    for i in range(start, len(data) - 1):
+        swing_low = float(data.iloc[i]["Low"])
+        previous_low = float(data.iloc[i - 1]["Low"])
+        next_low = float(data.iloc[i + 1]["Low"])
 
         if not (
             swing_low < previous_low
@@ -350,51 +261,26 @@ def find_swing_low(data):
             continue
 
         target = swing_low * 1.20
-
         target_index = None
 
-        for j in range(
-            i + 1,
-            len(data)
-        ):
-
-            high_price = float(
-                data.iloc[j]["High"]
-            )
-
-            if high_price >= target:
-
+        for j in range(i + 1, len(data)):
+            if float(data.iloc[j]["High"]) >= target:
                 target_index = j
                 break
 
         if target_index is None:
             continue
 
-        broken = False
+        broken = any(
+            float(data.iloc[k]["Low"]) < swing_low
+            for k in range(i + 1, target_index + 1)
+        )
 
-        for k in range(
-            i + 1,
-            target_index + 1
-        ):
-
-            later_low = float(
-                data.iloc[k]["Low"]
-            )
-
-            if later_low < swing_low:
-
-                broken = True
-                break
-
-        if broken:
-            continue
-
-        candidates.append(
-            {
+        if not broken:
+            candidates.append({
                 "index": i,
                 "target_index": target_index
-            }
-        )
+            })
 
     if not candidates:
         return None
@@ -408,178 +294,100 @@ def find_swing_low(data):
 
 
 def check_setup(data, swing_index):
-
-    swing_low = float(
-        data.iloc[swing_index]["Low"]
-    )
-
-    swing_date = data.index[
-        swing_index
-    ]
-
+    swing_low = float(data.iloc[swing_index]["Low"])
+    swing_date = data.index[swing_index]
     target = swing_low * 1.20
 
     target_index = None
     first_red_index = None
 
-    for i in range(
-        swing_index + 1,
-        len(data)
-    ):
-
-        open_price = float(
-            data.iloc[i]["Open"]
-        )
-
-        high_price = float(
-            data.iloc[i]["High"]
-        )
-
-        close_price = float(
-            data.iloc[i]["Close"]
-        )
-
-        is_red = (
-            close_price < open_price
-        )
+    for i in range(swing_index + 1, len(data)):
+        open_price = float(data.iloc[i]["Open"])
+        high_price = float(data.iloc[i]["High"])
+        close_price = float(data.iloc[i]["Close"])
+        is_red = close_price < open_price
 
         if target_index is None:
-
             if high_price >= target:
-
                 target_index = i
-
                 first_red_index = None
-
                 continue
 
             if is_red:
-
                 if first_red_index is None:
-
                     first_red_index = i
-
                 else:
-
                     return None
-
             else:
-
                 first_red_index = None
 
             continue
 
         if is_red:
-
             if first_red_index is None:
-
                 first_red_index = i
-
             else:
-
                 second_red_index = i
-
-                recent_start = max(
-                    0,
-                    len(data) - RECENT_CANDLES
-                )
+                recent_start = max(0, len(data) - RECENT_CANDLES)
 
                 if second_red_index < recent_start:
                     return None
 
                 return {
                     "Symbol": "",
-                    "Swing Low": round(
-                        swing_low,
-                        2
-                    ),
-                    "Swing Low Date":
-                        swing_date.strftime(
-                            "%Y-%m-%d"
-                        ),
-                    "+20% Level": round(
-                        target,
-                        2
-                    ),
-                    "+20% Date":
-                        data.index[
-                            target_index
-                        ].strftime(
-                            "%Y-%m-%d"
-                        ),
-                    "1st Red Date":
-                        data.index[
-                            first_red_index
-                        ].strftime(
-                            "%Y-%m-%d"
-                        ),
-                    "2nd Red Date":
-                        data.index[
-                            second_red_index
-                        ].strftime(
-                            "%Y-%m-%d"
-                        ),
-                    "2nd Red Close": round(
-                        close_price,
-                        2
-                    )
+                    "Swing Low": round(swing_low, 2),
+                    "Swing Low Date": pd.Timestamp(
+                        swing_date
+                    ).strftime("%Y-%m-%d"),
+                    "+20% Level": round(target, 2),
+                    "+20% Date": pd.Timestamp(
+                        data.index[target_index]
+                    ).strftime("%Y-%m-%d"),
+                    "1st Red Date": pd.Timestamp(
+                        data.index[first_red_index]
+                    ).strftime("%Y-%m-%d"),
+                    "2nd Red Date": pd.Timestamp(
+                        data.index[second_red_index]
+                    ).strftime("%Y-%m-%d"),
+                    "2nd Red Close": round(close_price, 2)
                 }
-
         else:
-
             first_red_index = None
 
     return None
 
 
 def process_stock(symbol, data):
-
     try:
+        data = normalize_dataframe(data, symbol)
 
-        data = normalize_dataframe(
-            data,
-            symbol
-        )
-
-        if data.empty:
+        if data.empty or len(data) < 10:
             return None
 
-        if len(data) < 10:
-            return None
-
-        swing_index = find_swing_low(
-            data
-        )
+        swing_index = find_swing_low(data)
 
         if swing_index is None:
             return None
 
-        result = check_setup(
-            data,
-            swing_index
-        )
+        result = check_setup(data, swing_index)
 
         if result is None:
             return None
 
         result["Symbol"] = symbol
-
         return result
 
     except Exception:
-
         return None
 
 
 def download_batch(symbols):
-
     tickers = [
         clean_symbol(symbol) + ".NS"
         for symbol in symbols
     ]
 
     try:
-
         return yf.download(
             tickers=tickers,
             period=YF_PERIOD,
@@ -589,40 +397,43 @@ def download_batch(symbols):
             threads=True,
             group_by="ticker"
         )
-
     except Exception:
-
         return pd.DataFrame()
 
 
-def get_stock_from_batch(
-    batch_data,
-    symbol
-):
-
-    ticker = (
-        clean_symbol(symbol)
-        + ".NS"
-    )
+def download_ipo_history_batch(symbols, start_date, end_date):
+    tickers = [
+        clean_symbol(symbol) + ".NS"
+        for symbol in symbols
+    ]
 
     try:
+        return yf.download(
+            tickers=tickers,
+            start=start_date,
+            end=end_date,
+            interval="1d",
+            auto_adjust=False,
+            progress=False,
+            threads=True,
+            group_by="ticker"
+        )
+    except Exception:
+        return pd.DataFrame()
 
-        if batch_data is None:
+
+def get_stock_from_batch(batch_data, symbol):
+    ticker = clean_symbol(symbol) + ".NS"
+
+    try:
+        if batch_data is None or batch_data.empty:
             return None
 
-        if batch_data.empty:
-            return None
-
-        if isinstance(
-            batch_data.columns,
-            pd.MultiIndex
-        ):
-
+        if isinstance(batch_data.columns, pd.MultiIndex):
             level0 = [
                 str(x).upper()
                 for x in batch_data.columns.get_level_values(0)
             ]
-
             level1 = [
                 str(x).upper()
                 for x in batch_data.columns.get_level_values(1)
@@ -632,40 +443,27 @@ def get_stock_from_batch(
                 return batch_data[ticker].copy()
 
             if clean_symbol(symbol).upper() in level0:
-                return batch_data[
-                    clean_symbol(symbol)
-                ].copy()
+                return batch_data[clean_symbol(symbol)].copy()
 
             if ticker.upper() in level1:
                 return batch_data.xs(
-                    ticker,
-                    axis=1,
-                    level=1
+                    ticker, axis=1, level=1
                 ).copy()
 
             if clean_symbol(symbol).upper() in level1:
                 return batch_data.xs(
-                    clean_symbol(symbol),
-                    axis=1,
-                    level=1
+                    clean_symbol(symbol), axis=1, level=1
                 ).copy()
 
         return batch_data.copy()
 
     except Exception:
-
         return None
 
 
-def run_scanner(
-    symbols,
-    scanner_name
-):
-
+def run_scanner(symbols, scanner_name):
     results = []
-
     status = st.empty()
-
     progress = st.progress(0)
 
     total = len(symbols)
@@ -675,51 +473,30 @@ def run_scanner(
 
     batches = [
         symbols[i:i + BATCH_SIZE]
-        for i in range(
-            0,
-            total,
-            BATCH_SIZE
-        )
+        for i in range(0, total, BATCH_SIZE)
     ]
 
-    total_batches = len(batches)
-
-    for batch_number, batch in enumerate(
-        batches
-    ):
-
+    for batch_number, batch in enumerate(batches):
         status.write(
-            f"{scanner_name}: "
-            f"Batch {batch_number + 1}/"
-            f"{total_batches}"
+            f"{scanner_name}: Batch "
+            f"{batch_number + 1}/{len(batches)}"
         )
 
-        batch_data = download_batch(
-            batch
-        )
+        batch_data = download_batch(batch)
 
         for symbol in batch:
-
-            stock_data = (
-                get_stock_from_batch(
-                    batch_data,
-                    symbol
-                )
+            stock_data = get_stock_from_batch(
+                batch_data, symbol
             )
 
-            result = process_stock(
-                symbol,
-                stock_data
-            )
+            result = process_stock(symbol, stock_data)
 
             if result is not None:
                 results.append(result)
 
         progress.progress(
-            (batch_number + 1)
-            / total_batches
+            (batch_number + 1) / len(batches)
         )
-
         time.sleep(0.3)
 
     status.empty()
@@ -728,37 +505,210 @@ def run_scanner(
     return results
 
 
-def display_results(
-    results,
-    total,
-    scanner_name
-):
+def run_ipo_backtest(symbols, start_date, end_date):
+    matches = []
+    rejected = []
 
-    st.success(
-        f"{scanner_name} SCAN COMPLETE"
-    )
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date)
 
-    st.write(
-        "Total Stocks:",
-        total
-    )
+    # Download extra history so January setups can use earlier swing lows.
+    history_start = (
+        start_ts - pd.Timedelta(days=365)
+    ).strftime("%Y-%m-%d")
 
-    st.write(
-        "Current Matches:",
-        len(results)
-    )
+    # yfinance end date is exclusive.
+    history_end = (
+        end_ts + pd.Timedelta(days=1)
+    ).strftime("%Y-%m-%d")
 
-    if not results:
+    batches = [
+        symbols[i:i + BATCH_SIZE]
+        for i in range(0, len(symbols), BATCH_SIZE)
+    ]
 
-        st.warning(
-            "0 CURRENT MATCHES"
+    progress = st.progress(0)
+    status = st.empty()
+
+    for batch_number, batch in enumerate(batches):
+        status.write(
+            f"IPO Backtest: Batch "
+            f"{batch_number + 1}/{len(batches)}"
         )
 
+        batch_data = download_ipo_history_batch(
+            batch, history_start, history_end
+        )
+
+        for symbol in batch:
+            raw = get_stock_from_batch(batch_data, symbol)
+            data = normalize_dataframe(raw, symbol)
+
+            if data.empty or len(data) < 3:
+                continue
+
+            data = data.sort_index()
+            lows = data["Low"].astype(float)
+            opens = data["Open"].astype(float)
+            highs = data["High"].astype(float)
+            closes = data["Close"].astype(float)
+
+            i = 1
+
+            while i < len(data) - 1:
+                swing_low = float(lows.iloc[i])
+
+                if not (
+                    swing_low < float(lows.iloc[i - 1])
+                    and swing_low < float(lows.iloc[i + 1])
+                ):
+                    i += 1
+                    continue
+
+                swing_date = pd.Timestamp(data.index[i]).normalize()
+                target = swing_low * 1.20
+
+                target_index = None
+                first_red = None
+                event_index = None
+                event_type = None
+                reason = ""
+
+                # Before target: two consecutive red candles reject the setup.
+                for j in range(i + 1, len(data)):
+                    if float(lows.iloc[j]) < swing_low:
+                        event_index = j
+                        event_type = "INVALID"
+                        reason = "Swing low broken"
+                        break
+
+                    if float(highs.iloc[j]) >= target:
+                        target_index = j
+                        break
+
+                    is_red = float(closes.iloc[j]) < float(opens.iloc[j])
+
+                    if is_red:
+                        if first_red is None:
+                            first_red = j
+                        else:
+                            event_index = j
+                            event_type = "REJECT"
+                            reason = "Two red candles before target"
+                            break
+                    else:
+                        first_red = None
+
+                if event_type == "INVALID":
+                    # Old swing no longer valid; allow later setups.
+                    i = event_index + 1
+                    continue
+
+                if event_type == "REJECT":
+                    event_date = pd.Timestamp(
+                        data.index[event_index]
+                    ).normalize()
+
+                    if start_ts <= event_date <= end_ts:
+                        rejected.append({
+                            "Symbol": symbol,
+                            "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
+                            "Swing Low": round(swing_low, 2),
+                            "+20% Target": round(target, 2),
+                            "Reject Date": event_date.strftime("%Y-%m-%d"),
+                            "Reason": reason
+                        })
+
+                    i = event_index + 1
+                    continue
+
+                if target_index is None:
+                    # No target yet; no historical match from this setup.
+                    i += 1
+                    continue
+
+                # Target candle itself is excluded from red counting.
+                first_red = None
+                found_pair = False
+
+                for k in range(target_index + 1, len(data)):
+                    is_red = float(closes.iloc[k]) < float(opens.iloc[k])
+
+                    if is_red:
+                        if first_red is None:
+                            first_red = k
+                        else:
+                            second_red = k
+                            event_date = pd.Timestamp(
+                                data.index[second_red]
+                            ).normalize()
+
+                            if start_ts <= event_date <= end_ts:
+                                matches.append({
+                                    "Symbol": symbol,
+                                    "Swing Low Date": swing_date.strftime("%Y-%m-%d"),
+                                    "Swing Low": round(swing_low, 2),
+                                    "+20% Target": round(target, 2),
+                                    "Target Hit Date": pd.Timestamp(
+                                        data.index[target_index]
+                                    ).strftime("%Y-%m-%d"),
+                                    "1st Red Date": pd.Timestamp(
+                                        data.index[first_red]
+                                    ).strftime("%Y-%m-%d"),
+                                    "2nd Red Date": event_date.strftime("%Y-%m-%d"),
+                                    "2nd Red Close": round(
+                                        float(closes.iloc[second_red]), 2
+                                    )
+                                })
+
+                            event_index = second_red
+                            found_pair = True
+                            break
+                    else:
+                        first_red = None
+
+                if found_pair:
+                    # Do not repeatedly count the same setup.
+                    i = event_index + 1
+                else:
+                    # Setup reached target but has not confirmed yet.
+                    # Later swing lows may be independent setups.
+                    i += 1
+
+        progress.progress(
+            (batch_number + 1) / max(len(batches), 1)
+        )
+        time.sleep(0.3)
+
+    status.empty()
+    progress.empty()
+
+    matches_df = pd.DataFrame(matches)
+    rejected_df = pd.DataFrame(rejected)
+
+    if not matches_df.empty:
+        matches_df = matches_df.drop_duplicates(
+            subset=["Symbol", "Swing Low Date", "2nd Red Date"]
+        ).sort_values("2nd Red Date", ascending=False)
+
+    if not rejected_df.empty:
+        rejected_df = rejected_df.drop_duplicates(
+            subset=["Symbol", "Swing Low Date", "Reject Date"]
+        ).sort_values("Reject Date", ascending=False)
+
+    return matches_df, rejected_df
+
+
+def display_results(results, total, scanner_name):
+    st.success(f"{scanner_name} SCAN COMPLETE")
+    st.write("Total Stocks:", total)
+    st.write("Current Matches:", len(results))
+
+    if not results:
+        st.warning("0 CURRENT MATCHES")
         return
 
-    df = pd.DataFrame(
-        results
-    )
+    df = pd.DataFrame(results)
 
     columns = [
         "Symbol",
@@ -771,9 +721,7 @@ def display_results(
         "2nd Red Close"
     ]
 
-    df = df[columns]
-
-    df = df.sort_values(
+    df = df[columns].sort_values(
         by="2nd Red Date",
         ascending=False
     )
@@ -786,139 +734,148 @@ def display_results(
 
 
 tab1, tab2, tab3 = st.tabs(
-    [
-        "FULL NSE",
-        "NIFTY 500",
-        "IPO"
-    ]
+    ["FULL NSE", "NIFTY 500", "IPO"]
 )
 
 
 with tab1:
-
-    st.subheader(
-        "Full NSE Equity Scanner"
-    )
+    st.subheader("Full NSE Equity Scanner")
 
     if st.button(
         "SCAN FULL NSE",
         type="primary",
         key="full_nse"
     ):
-
-        st.write(
-            "Loading NSE stock list..."
-        )
-
+        st.write("Loading NSE stock list...")
         symbols = get_nse_symbols()
 
         if not symbols:
-
-            st.error(
-                "NSE stock list load nahi ho payi."
-            )
-
+            st.error("NSE stock list load nahi ho payi.")
         else:
-
-            st.info(
-                f"Total NSE Stocks: {len(symbols)}"
-            )
-
-            results = run_scanner(
-                symbols,
-                "FULL NSE"
-            )
-
-            display_results(
-                results,
-                len(symbols),
-                "FULL NSE"
-            )
+            st.info(f"Total NSE Stocks: {len(symbols)}")
+            results = run_scanner(symbols, "FULL NSE")
+            display_results(results, len(symbols), "FULL NSE")
 
 
 with tab2:
-
-    st.subheader(
-        "NIFTY 500 Scanner"
-    )
+    st.subheader("NIFTY 500 Scanner")
 
     if st.button(
         "SCAN NIFTY 500",
         type="primary",
         key="nifty500"
     ):
-
-        st.write(
-            "Loading current NIFTY 500 list from NSE..."
-        )
-
+        st.write("Loading current NIFTY 500 list from NSE...")
         symbols = get_nifty500_symbols()
 
         if not symbols:
-
-            st.error(
-                "NIFTY 500 list NSE se load nahi ho payi."
-            )
-
+            st.error("NIFTY 500 list NSE se load nahi ho payi.")
         else:
-
-            st.info(
-                f"NIFTY 500 Stocks: {len(symbols)}"
-            )
-
-            results = run_scanner(
-                symbols,
-                "NIFTY 500"
-            )
-
-            display_results(
-                results,
-                len(symbols),
-                "NIFTY 500"
-            )
+            st.info(f"NIFTY 500 Stocks: {len(symbols)}")
+            results = run_scanner(symbols, "NIFTY 500")
+            display_results(results, len(symbols), "NIFTY 500")
 
 
 with tab3:
+    st.subheader("IPO Scanner")
 
-    st.subheader(
-        "IPO Scanner"
+    scan_tab, backtest_tab = st.tabs(
+        ["Current Scan", "Historical Backtest"]
     )
 
-    st.write(
-        "NSE listed IPO stocks scanner"
-    )
+    with scan_tab:
+        st.write("NSE Mainboard IPO stocks scanner")
 
-    if st.button(
-        "SCAN IPO",
-        type="primary",
-        key="ipo"
-    ):
+        if st.button(
+            "SCAN IPO",
+            type="primary",
+            key="ipo"
+        ):
+            st.write("Loading IPO stock universe...")
+            symbols = get_ipo_symbols()
 
+            if not symbols:
+                st.error("IPO stock list load nahi ho payi.")
+            else:
+                st.info(f"Stocks available: {len(symbols)}")
+                results = run_scanner(symbols, "IPO")
+                display_results(results, len(symbols), "IPO")
+
+    with backtest_tab:
         st.write(
-            "Loading IPO stock universe..."
+            "Historical IPO backtest: 1 January 2026 se aaj tak"
         )
 
-        symbols = get_ipo_symbols()
+        if st.button(
+            "RUN IPO BACKTEST",
+            type="primary",
+            key="ipo_backtest"
+        ):
+            symbols = get_ipo_symbols()
 
-        if not symbols:
+            if not symbols:
+                st.error("IPO stock list load nahi ho payi.")
+            else:
+                start_date = pd.Timestamp(BACKTEST_START).date()
+                end_date = pd.Timestamp.now(
+                    tz="Asia/Kolkata"
+                ).date()
 
-            st.error(
-                "IPO stock list load nahi ho payi."
-            )
+                st.info(
+                    f"Period: {start_date} to {end_date} | "
+                    f"Mainboard IPOs: {len(symbols)}"
+                )
 
-        else:
+                matches_df, rejected_df = run_ipo_backtest(
+                    symbols, start_date, end_date
+                )
 
-            st.info(
-                f"Stocks available: {len(symbols)}"
-            )
+                st.subheader(
+                    f"Historical Matches: {len(matches_df)}"
+                )
 
-            results = run_scanner(
-                symbols,
-                "IPO"
-            )
+                if matches_df.empty:
+                    st.warning(
+                        "Is period mein koi historical match nahi mila."
+                    )
+                else:
+                    st.dataframe(
+                        matches_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
 
-            display_results(
-                results,
-                len(symbols),
-                "IPO"
-            )
+                    st.download_button(
+                        "Download Matches CSV",
+                        data=matches_df.to_csv(
+                            index=False
+                        ).encode("utf-8"),
+                        file_name="ipo_backtest_matches_2026.csv",
+                        mime="text/csv",
+                        key="download_ipo_matches"
+                    )
+
+                st.subheader(
+                    f"Rejected Setups: {len(rejected_df)}"
+                )
+
+                if rejected_df.empty:
+                    st.write(
+                        "Koi rejected setup record nahi hua."
+                    )
+                else:
+                    st.dataframe(
+                        rejected_df,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                    st.download_button(
+                        "Download Rejected CSV",
+                        data=rejected_df.to_csv(
+                            index=False
+                        ).encode("utf-8"),
+                        file_name="ipo_backtest_rejected_2026.csv",
+                        mime="text/csv",
+                        key="download_ipo_rejected"
+                    )
