@@ -258,7 +258,7 @@ def get_ipo_symbols():
         if not records:
             return []
 
-        start_date = pd.Timestamp("2025-01-01")
+        start_date = pd.Timestamp("2020-01-01")
 
         symbols = []
 
